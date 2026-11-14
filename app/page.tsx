@@ -417,7 +417,7 @@ export default function Home() {
                 <div className="plan-amount"><strong>{plan.amount} {plan.sourceSymbol}</strong><small>Per interval</small></div>
                 <div className="plan-next"><strong>{formatDate(plan.nextRunAt)}</strong><small>Planned next date</small></div>
                 <div className="plan-status">PLANNED ONLY</div>
-                <button className="remove-plan" type="button" onClick={() => removePlan(plan.id)} aria-label={"Remove " + plan.sourceSymbol + " to " + plan.destinationSymbol + " plan}>×</button>
+                <button className="remove-plan" type="button" onClick={() => removePlan(plan.id)} aria-label={"Remove " + plan.sourceSymbol + " to " + plan.destinationSymbol + " plan"}>×</button>
               </article>
             ))}
           </div>
