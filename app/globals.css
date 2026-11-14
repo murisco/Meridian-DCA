@@ -609,3 +609,9 @@ h1 em,h2 em{color:#68e3f1}
 .ref-direct-panel .quote-detail strong{max-width:66%;overflow-wrap:anywhere}
 .ref-direct-panel .full-button{margin:8px 0 4px}
 .ref-direct-panel .live-swap-note{margin:9px 0 11px}
+
+.investment-buy-panel{margin-top:20px}
+.recurring-plan-field{margin-top:22px;padding:14px 0 4px;border-top:1px solid rgba(126,164,184,.2)}
+.recurring-plan-field .ref-direct-heading{margin-bottom:12px}
+.recurring-plan-field .field{margin-bottom:0}
+.recurring-plan-field .field-hint{max-width:440px;line-height:1.5}
