@@ -78,6 +78,20 @@ function shorten(value: string) {
   return value.slice(0, 10) + "…" + value.slice(-8);
 }
 
+function formatBaseUnits(value: string, decimals: number) {
+  try {
+    const units = BigInt(value);
+    const scale = 10n ** BigInt(decimals);
+    const whole = units / scale;
+    const remainder = units % scale;
+    if (remainder === 0n) return whole.toString();
+    const fraction = remainder.toString().padStart(decimals, "0").replace(/0+$/, "");
+    return whole.toString() + "." + fraction.slice(0, 8);
+  } catch {
+    return value;
+  }
+}
+
 export default function Home() {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [assetsLoading, setAssetsLoading] = useState(true);
@@ -155,7 +169,9 @@ export default function Home() {
     const query = assetSearch.trim().toLowerCase();
     const list = query
       ? assets.filter((asset) =>
-          (asset.symbol + " " + asset.blockchain).toLowerCase().includes(query)
+          (asset.symbol + " " + asset.blockchain).toLowerCase().includes(query) ||
+          asset.assetId === originAssetId ||
+          asset.assetId === destinationAssetId
         )
       : assets;
     return list;
@@ -289,7 +305,7 @@ export default function Home() {
             <div className="asset-grid">
               <div className="field">
                 <label htmlFor="origin">I WANT TO INVEST WITH</label>
-                <select id="origin" value={originAssetId} onChange={(event) => { setOriginAssetId(event.target.value); setQuoteResult(null); }} disabled={assetsLoading || !assets.length}>
+                <select id="origin" value={originAssetId} onChange={(event) => { const next = event.target.value; setOriginAssetId(next); if (next === destinationAssetId) setDestinationAssetId(assets.find((asset) => asset.assetId !== next)?.assetId || ""); setQuoteResult(null); }} disabled={assetsLoading || !assets.length}>
                   {visibleAssets.map((asset) => <option key={asset.assetId} value={asset.assetId}>{asset.symbol} · {asset.blockchain.toUpperCase()}</option>)}
                 </select>
                 {origin && <span className="field-hint">{origin.blockchain.toUpperCase()} network · {origin.decimals} decimals</span>}
@@ -369,7 +385,7 @@ export default function Home() {
                 <div className="quote-pair">{quoteResult.assets.origin.symbol} on {quoteResult.assets.origin.blockchain.toUpperCase()} <span>→</span> {quoteResult.assets.destination.symbol} on {quoteResult.assets.destination.blockchain.toUpperCase()}</div>
                 <div className="quote-divider" />
                 <div className="quote-detail"><span>Input amount</span><strong>{quoteData.amountInFormatted || amount} {origin?.symbol}</strong></div>
-                <div className="quote-detail"><span>Minimum output</span><strong>{quoteData.minAmountOut || "See quote details"} {destination?.symbol}</strong></div>
+                <div className="quote-detail"><span>Minimum output</span><strong>{quoteData.minAmountOut ? formatBaseUnits(quoteData.minAmountOut, destination?.decimals || 0) : "See quote details"} {destination?.symbol}</strong></div>
                 <div className="quote-detail"><span>Estimated route time</span><strong>{typeof quoteData.timeEstimate === "number" ? Math.max(1, Math.round(quoteData.timeEstimate / 60)) + " min" : "Not provided"}</strong></div>
                 <div className="quote-detail"><span>Quote reference</span><strong className="reference">{quoteResult.quote.correlationId ? shorten(quoteResult.quote.correlationId) : "Generated"}</strong></div>
                 <div className="quote-warning"><b>Preview only.</b> No deposit address was generated and no funds were moved.</div>
