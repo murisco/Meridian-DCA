@@ -1,55 +1,93 @@
 # MERIDIAN DCA
 
-**Cross-chain recurring investment planning, powered by NEAR Intents.**
+**Cross-chain dollar-cost averaging planner powered by NEAR Intents 1Click.**
 
-MERIDIAN DCA helps users plan recurring purchases across supported chains, preview real swap quotes, set investment parameters and keep a transparent record of their plans.
+MERIDIAN helps a user define a recurring cross-chain buy, inspect a live 1Click quote, apply a user-selected slippage limit, and save a local DCA plan. This hackathon prototype is deliberately **dry-run only**.
 
-## Current capabilities
+## What works in this prototype
 
-- Live supported-asset list from the NEAR Intents 1Click API.
-- Decimal-safe input conversion using each token's API-provided precision.
-- Real 1Click quote previews with \`dry: true\`.
-- Configurable source and destination assets, destination/refund addresses and slippage tolerance.
-- Local recurring-plan planner for daily, weekly and monthly strategies.
-- Railway health endpoint at \`/api/health\`.
+- Loads the current supported asset list from the NEAR Intents 1Click `GET /v0/tokens` endpoint.
+- Uses token-provided decimals to convert human-readable amounts into base units without floating-point arithmetic.
+- Requests real 1Click quotes from the server-side `POST /v0/quote` endpoint with `dry: true`.
+- Sends explicit `ORIGIN_CHAIN` deposit/refund types and `DESTINATION_CHAIN` recipient type for cross-chain quotes.
+- Sends the user's maximum slippage in basis points and a short quote deadline.
+- Displays expected output, minimum output, the slippage guard, quote reference and expiry when returned by 1Click.
+- Lets a user save daily, weekly or monthly DCA plans in browser local storage.
+- Lets a user run a fresh dry-run quote for a saved plan. The UI compares the returned expected output and minimum output against the plan's saved slippage limit and records a visible `PASSED`, `BLOCKED`, `UNVERIFIED` or `ERROR` check result.
+- Provides `GET /api/health` for deployment health.
 
-## Safety boundary
+## Try it
 
-This release is **dry-run only**. Quote requests are forced server-side to \`dry: true\`. The app does not request deposit addresses, initiate transfers, custody assets, sign transactions or run unattended recurring swaps. Plans are saved in the user's browser and are planning records, not active on-chain automation.
+Hosted demo: https://meridian-dashboard.up.railway.app/
 
-NEAR Intents documents that \`dry: true\` validates and previews a swap without generating a deposit address. A future execution release must add explicit wallet authorization, committed quotes, chain-specific deposit handling, status tracking and refund/failure handling before it can be described as live DCA.
+1. Open the dashboard. Wait for the supported-asset list to load from NEAR Intents.
+2. Choose a source asset and a different destination asset.
+3. Enter an amount, a destination-chain recipient address, and a source-chain refund address.
+4. Set the maximum slippage and select Daily, Weekly or Monthly.
+5. Choose **Preview live quote**. The quote card should show the returned output, minimum output, slippage guard and quote reference.
+6. Choose **Save recurring plan**. The plan should appear under **My strategies**.
+7. Choose **Check quote** on that saved plan. MERIDIAN requests a new dry-run quote using the saved addresses, amount and slippage limit, then shows the local minimum-output check result.
+8. Refresh the page. Saved plans and their last dry-run result should remain in that browser.
 
-## Run locally
+API checks:
+
+- `GET /api/health` — returns app health and `dry-run-only` mode.
+- `GET /api/tokens` — returns the current supported asset list and count.
+- `POST /api/quote` — validates input and requests a real 1Click quote with `dry: true`.
+
+## NEAR Intents integration
+
+The application uses the NEAR Intents 1Click API as its cross-chain quote and routing layer. MERIDIAN sends token `assetId` values from the live token endpoint and uses each token's `decimals` field for base-unit conversion. The quote is requested server-side so a partner JWT, when configured, remains secret.
+
+The user-selected slippage is sent as `slippageTolerance` in basis points (100 = 1%). The quote response's `amountOut` and `minAmountOut` are used for the saved-plan dry-run check. The quote request also includes a three-minute deadline.
+
+See the official [1Click quickstart](https://docs.agentsonintents.com/integration/distribution-channels/1click-api/quickstart/making-a-request) and [NEAR Hackathon Unstoppable DeFi prompt](https://github.com/nearai/near-hackathon-prompt-examples/blob/main/tracks/01-defi.md).
+
+## Safety boundary and limitations
+
+This release is **dry-run only**. The server forces `dry: true`; it never requests a committed quote or deposit address. MERIDIAN does not initiate token transfers, sign transactions, custody assets, or run unattended recurring swaps.
+
+Saved plans are browser-local planning records, not on-chain vaults and not server-side scheduled jobs. The **Check quote** action is manually triggered by the user and only obtains a fresh dry-run quote. It does not execute a buy.
+
+Because this demo does not create deposits, it does not currently have real swap history or live `SUCCESS`, `REFUNDED` or `FAILED` transaction states. Those require a separately approved execution flow, deposit tracking and explicit wallet authorization. Do not describe the current prototype as automated on-chain DCA.
+
+## Local development
 
 Requirements: Node.js 20 or newer.
 
-\`\`\`bash
+```bash
 npm install
 npm run dev
-\`\`\`
+```
 
 Open http://localhost:3000.
 
-## Optional partner JWT
+## Configuration
 
-Set \`NEAR_INTENTS_JWT\` in the server environment to use a partner JWT. Keep this value server-side; never expose it in browser code. Without a JWT, NEAR Intents documents an additional 0.25% fee on eligible non-ANY_INPUT quotes.
+Optional server-side environment variable:
 
-## Deploy on Railway
+- `NEAR_INTENTS_JWT` — partner JWT for the 1Click API. Configure it in the hosting environment, never in browser code or a committed file.
 
-Deploy the \`main\` branch as a Node.js service. Railway should detect Next.js and run the package build/start scripts. The app listens on the port supplied by Railway through Next.js.
+Without a JWT, the 1Click documentation currently describes an additional unauthenticated fee on eligible quotes. Check the live [fee documentation](https://docs.agentsonintents.com/integration/distribution-channels/1click-api/authentication) for the applicable schedule.
 
-Health check path: \`/api/health\`.
+## Deployment
 
-## API routes
+The production service is hosted on Railway and deploys from the `main` branch. The service listens on the Railway-provided port.
 
-- \`GET /api/tokens\` — cached supported assets.
-- \`POST /api/quote\` — server-side dry-run quote only.
-- \`GET /api/health\` — deployment health.
+Health check path: `/api/health`.
 
-## Roadmap
+## Built with
 
-1. Wallet connection and verified address ownership.
-2. User-authorized quote commitment and chain-specific deposits.
-3. Swap status history, explorer links, refund and failure states.
-4. Secure server-side schedule execution with durable storage and explicit approvals.
-5. NEAR contract-based vault ownership as a later stretch goal.
+- Next.js 15
+- React 19
+- TypeScript
+- NEAR Intents 1Click API
+- Railway
+
+## Hackathon review notes
+
+Track: **Unstoppable DeFi** (`defi`).
+
+Judges can reproduce the core demo using the hosted dashboard and the numbered **Try it** steps above. The key NEAR integration demonstrated is a real cross-chain 1Click quote using the live supported-asset catalogue, server-side quote request, route types, deadline and slippage tolerance, all in dry-run mode.
+
+The current prototype intentionally demonstrates quote generation and plan-level quote checks rather than deposits or live execution. This limitation is visible in the application and is enforced server-side.
