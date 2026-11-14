@@ -152,7 +152,7 @@ function formatBaseUnits(value: string, decimals: number) {
 
 function validatePlanAmount(value: string, decimals: number) {
   const normalized = value.trim();
-  if (!/^(?:0|[1-9]\\d*)(?:\\.\\d+)?$/.test(normalized)) {
+  if (!/^(?:0|[1-9]\d*)(?:\.\d+)?$/.test(normalized)) {
     throw new Error("Enter a valid positive amount without commas or scientific notation.");
   }
   const [whole, fraction = ""] = normalized.split(".");
