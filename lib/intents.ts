@@ -1,3 +1,5 @@
+export type IntentNetwork = "mainnet" | "testnet";
+
 export type IntentToken = {
   assetId: string;
   decimals: number;
@@ -8,16 +10,23 @@ export type IntentToken = {
   contractAddress?: string | null;
 };
 
-const API_BASE = "https://1click.chaindefuser.com";
+const API_BASES: Record<IntentNetwork, string> = {
+  mainnet: "https://1click.chaindefuser.com",
+  testnet: "https://www.usetidepool.tech",
+};
 
-export async function fetchIntentTokens(): Promise<IntentToken[]> {
-  const response = await fetch(API_BASE + "/v0/tokens", {
+export function getIntentsApiBase(network: IntentNetwork = "mainnet") {
+  return API_BASES[network];
+}
+
+export async function fetchIntentTokens(network: IntentNetwork = "mainnet"): Promise<IntentToken[]> {
+  const response = await fetch(getIntentsApiBase(network) + "/v0/tokens", {
     headers: { Accept: "application/json" },
-    next: { revalidate: 300 },
+    next: { revalidate: 60 },
   });
 
   if (!response.ok) {
-    throw new Error("NEAR Intents token service returned HTTP " + response.status);
+    throw new Error((network === "testnet" ? "Tidepool testnet" : "NEAR Intents 1Click") + " token service returned HTTP " + response.status);
   }
 
   const data: unknown = await response.json();
@@ -55,12 +64,13 @@ export function toBaseUnits(value: string, decimals: number): string {
   return units.toString();
 }
 
-export function getIntentsHeaders(): Record<string, string> {
+export function getIntentsHeaders(network: IntentNetwork = "mainnet"): Record<string, string> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     Accept: "application/json",
   };
-  const jwt = process.env.NEAR_INTENTS_JWT;
+  // Never forward the production partner JWT to the community testnet sandbox.
+  const jwt = network === "mainnet" ? process.env.NEAR_INTENTS_JWT : undefined;
   if (jwt) headers.Authorization = "Bearer " + jwt;
   return headers;
 }
