@@ -768,7 +768,7 @@ export default function Home() {
             {network === "testnet" && (
               <div className="ref-direct-panel">
                 <div className="ref-direct-heading"><strong>USE YOUR EXISTING wNEAR</strong><span>REF FINANCE · TESTNET</span></div>
-                <p className="live-swap-note">This route uses your actual <strong>wrap.testnet</strong> wNEAR and Ref Finance's testnet WBTC token. It is separate from Tidepool's sandbox assets.</p>
+                <p className="live-swap-note">This route uses your actual <strong>wrap.testnet</strong> wNEAR and Ref Finance's testnet WBTC token <strong>wbtc.fakes.testnet</strong>. It is separate from Tidepool's sandbox assets and capped at 0.02 wNEAR.</p>
                 <div className="quote-detail"><span>Swap pair</span><strong>wNEAR → WBTC</strong></div>
                 <div className="quote-detail"><span>Input amount</span><strong>{amount || "—"} wNEAR</strong></div>
                 <div className="quote-detail"><span>Wallet account</span><strong>{recipient.trim() || "Enter wallet address above"}</strong></div>
@@ -792,7 +792,7 @@ export default function Home() {
                 )}
                 {refRouteError && <div className="swap-execution-state error" role="alert"><strong>ROUTE CHECK</strong><span>{refRouteError}</span></div>}
                 {liveSwapStatus && <div className={"swap-execution-state " + (liveSwapStatus === "SUCCESS" ? "success" : liveSwapStatus === "ERROR" ? "error" : "")} role="status" aria-live="polite"><strong>{liveSwapStatus.replaceAll("_", " ")}</strong><span>{liveSwapMessage}</span></div>}
-                <p className="fee-note">Ref Finance quotes are checked live from the testnet DCL contract. No transaction is sent until you approve it in your wallet.</p>
+                <p className="fee-note">Ref Finance quotes are checked live from the testnet DCL contract. No transaction is sent until you approve it in your wallet. This first buy is a one-time swap; the saved weekly plan does not yet execute future purchases automatically.</p>
               </div>
             )}
             {!quoteResult && !quoteLoading && (
