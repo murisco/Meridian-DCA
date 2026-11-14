@@ -152,9 +152,6 @@ export async function POST(request: Request) {
       .filter((quote): quote is NonNullable<typeof quote> => quote !== null)
       .sort((a, b) => BigInt(a.amountOut) > BigInt(b.amountOut) ? -1 : BigInt(a.amountOut) < BigInt(b.amountOut) ? 1 : 0);
 
-    const validQuotes = quoteChecks.filter((quote): quote is NonNullable<typeof quote> => quote !== null)
-      .sort((a, b) => BigInt(a.amountOut) > BigInt(b.amountOut) ? -1 : BigInt(a.amountOut) < BigInt(b.amountOut) ? 1 : 0);
-
     if (!validQuotes.length) {
       return Response.json({
         available: false,
@@ -219,7 +216,7 @@ export async function GET() {
         input_amount: amountIn,
         tag: "meridian-diagnostic-" + fee,
       });
-      return { fee, poolId, ok: !!quote && /^\\d+$/.test(String(quote.amount || "")), amount: quote?.amount || null };
+      return { fee, poolId, ok: !!quote && /^\d+$/.test(String(quote.amount || "")), amount: quote?.amount || null };
     } catch (error) {
       return { fee, poolId, ok: false, error: error instanceof Error ? error.message : "DCL quote failed." };
     }
