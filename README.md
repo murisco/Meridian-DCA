@@ -108,15 +108,16 @@ The connected NEAR wallet remains testnet-only. Its menu reads the native NEAR b
 
 ## Ref Finance testnet first-buy route
 
-MERIDIAN includes a separate optional route intended to use the existing testnet wrapped NEAR token:
+MERIDIAN includes a separate optional testnet first-buy route using the verified Ref Finance DCL pool:
 
 - Input: `wrap.testnet` wNEAR (24 decimals).
-- Output: `wbtc.fakes.testnet` WBTC (8 decimals), which is the WBTC entry in Ref Finance's testnet SDK token list.
+- Output: `usdt.fakes.testnet` USDT.e (6 decimals).
+- Pool: `usdt.fakes.testnet|wrap.testnet|2000`, Ref Finance DCL v2 at the 0.2% fee tier.
 - Ref Finance testnet DCL contract: `dclv2.ref-dev.testnet`.
-- The app reads live pool information and requests quotes directly from the NEAR testnet RPC. It displays a swap option only when a running matching pool returns a positive quote.
-- The first test is capped at 0.02 wNEAR. The quote applies the selected slippage tolerance and computes minimum WBTC output using integer base units.
-- If the wallet has not registered to receive WBTC, the app first requests the token's exact `storage_balance_bounds.min` deposit, then requests a separate wallet approval for the swap.
-- After submission, MERIDIAN verifies that the wallet's WBTC balance increased before showing success.
+- The quote endpoint reads token metadata and storage bounds, checks the exact pool with Ref's `get_pool` view, then requests a live quote. It does not assume that token metadata alone proves liquidity.
+- The quote applies the selected slippage tolerance and calculates minimum USDT.e output using integer base units.
+- If the wallet has not registered to receive USDT.e, the app requests the token's exact `storage_balance_bounds.min` deposit in a separate wallet approval before the swap.
+- After submission, MERIDIAN verifies that the wallet's USDT.e balance increased before showing success.
 
 This is an independent Ref Finance NEAR testnet DEX route, not a NEAR Intents route and not Tidepool. Testnet tokens have no monetary value. Do not send real assets to testnet contracts.
 
