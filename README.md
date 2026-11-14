@@ -7,7 +7,7 @@ MERIDIAN helps a user define a recurring cross-chain buy, inspect a live 1Click 
 ## What works in this prototype
 
 - Loads the current supported asset list from the NEAR Intents 1Click `GET /v0/tokens` endpoint.
-- Connects NEAR wallets on **testnet** and displays the connected account with a disconnect control. Wallet connection is account-only; it does not sign or send transactions.
+- Connects browser-based NEAR wallets on **testnet**. When opened inside the Meteor Wallet mobile app, it uses Meteor's dedicated in-app connector. The connected account can be disconnected; the wallet feature does not submit transactions.
 - Uses token-provided decimals to convert human-readable amounts into base units without floating-point arithmetic.
 - Requests real 1Click quotes from the server-side `POST /v0/quote` endpoint with `dry: true`.
 - Sends explicit `ORIGIN_CHAIN` deposit/refund types and `DESTINATION_CHAIN` recipient type for cross-chain quotes.
@@ -21,7 +21,7 @@ MERIDIAN helps a user define a recurring cross-chain buy, inspect a live 1Click 
 
 Hosted demo: https://meridian-dashboard.up.railway.app/
 
-1. Open the dashboard. Optionally connect a wallet using **Connect Wallet** at the top-right. The selector is filtered to NEAR testnet-compatible wallets. Wait for the supported-asset list to load from NEAR Intents.
+1. Open the dashboard. Optionally connect a wallet using **Connect Wallet** at the top-right. Browser wallets are listed in standard browsers. For the Meteor mobile app, open this dashboard from inside Meteor Wallet's Explore browser first, then connect. Wait for the supported-asset list to load from NEAR Intents.
 2. Choose a source asset and a different destination asset.
 3. Enter an amount, a destination-chain recipient address, and a source-chain refund address.
 4. Set the maximum slippage and select Daily, Weekly or Monthly.
@@ -46,7 +46,7 @@ The implementation follows the [NEAR Intents agent skill](https://github.com/nea
 
 ## Safety boundary and limitations
 
-This release is **dry-run only**. The server forces `dry: true`; it never requests a committed quote or deposit address. The optional wallet connection is restricted to NEAR testnet and is used only to identify the connected account; this release does not request transaction signatures or send wallet transactions. MERIDIAN does not initiate token transfers, custody assets, or run unattended recurring swaps.
+This release is **dry-run only**. The server forces `dry: true`; it never requests a committed quote or deposit address. The optional wallet connection is restricted to NEAR testnet and is used only to identify the connected account; this release does not request transaction signatures or send wallet transactions. Meteor's app-specific connector works only when the dashboard is loaded inside its in-app browser. MERIDIAN does not initiate token transfers, custody assets, or run unattended recurring swaps.
 
 Saved plans are browser-local planning records, not on-chain vaults and not server-side scheduled jobs. The **Check quote** action is manually triggered by the user and only obtains a fresh dry-run quote. It does not execute a buy.
 
