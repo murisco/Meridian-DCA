@@ -1,0 +1,140 @@
+const RPC_URL = "https://rpc.testnet.fastnear.com";
+const REF_DCL_CONTRACT = "dclv2.ref-dev.testnet";
+const INPUT_TOKEN = "wrap.testnet";
+const OUTPUT_TOKEN = "wbtc.ft.ref-labs.testnet";
+const FEES = [100, 400, 2000, 10000];
+const ONE = 10n ** 24n;
+
+type RpcResponse = { result?: { result?: number[] }; error?: { message?: string } };
+
+async function view(contractId: string, methodName: string, args: Record<string, unknown> = {}) {
+  const argsBase64 = Buffer.from(JSON.stringify(args), "utf8").toString("base64");
+  const response = await fetch(RPC_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: "meridian-ref-check",
+      method: "query",
+      params: { request_type: "call_function", finality: "final", account_id: contractId, method_name: methodName, args_base64: argsBase64 },
+    }),
+    cache: "no-store",
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!response.ok) throw new Error("NEAR testnet RPC returned HTTP " + response.status);
+  const data = await response.json() as RpcResponse;
+  if (data.error) throw new Error(data.error.message || "NEAR contract view call failed.");
+  if (!Array.isArray(data.result?.result)) throw new Error("NEAR contract returned an unreadable view response.");
+  return JSON.parse(Buffer.from(data.result.result).toString("utf8")) as any;
+}
+
+function parsePositiveAmount(value: unknown) {
+  const amount = typeof value === "string" ? value.trim() : "";
+  if (!/^(?:0|[1-9]\d*)(?:\.\d{1,24})?$/.test(amount) || Number(amount) <= 0) {
+    throw new Error("Enter a valid wNEAR amount with up to 24 decimal places.");
+  }
+  const [whole, fraction = ""] = amount.split(".");
+  return (BigInt(whole) * ONE + BigInt((fraction + "0".repeat(24)).slice(0, 24))).toString();
+}
+
+export async function POST(request: Request) {
+  let input: { accountId?: unknown; amount?: unknown; slippageBps?: unknown };
+  try { input = await request.json() as typeof input; }
+  catch { return Response.json({ error: "Request body must be valid JSON." }, { status: 400 }); }
+
+  const accountId = typeof input.accountId === "string" ? input.accountId.trim() : "";
+  if (!/^[a-z0-9._-]{2,64}$/.test(accountId)) {
+    return Response.json({ error: "A valid NEAR testnet account ID is required." }, { status: 400 });
+  }
+  const slippageBps = Number(input.slippageBps ?? 100);
+  if (!Number.isInteger(slippageBps) || slippageBps < 1 || slippageBps > 500) {
+    return Response.json({ error: "Slippage must be between 1 and 500 basis points." }, { status: 400 });
+  }
+
+  try {
+    const amountIn = parsePositiveAmount(input.amount);
+    const [inputMeta, outputMeta, inputStorage, outputStorage, outputBounds, pools] = await Promise.all([
+      view(INPUT_TOKEN, "ft_metadata"),
+      view(OUTPUT_TOKEN, "ft_metadata"),
+      view(INPUT_TOKEN, "storage_balance_of", { account_id: accountId }),
+      view(OUTPUT_TOKEN, "storage_balance_of", { account_id: accountId }),
+      view(OUTPUT_TOKEN, "storage_balance_bounds"),
+      view(REF_DCL_CONTRACT, "list_pools"),
+    ]);
+
+    if (inputMeta.decimals !== 24 || outputMeta.decimals !== 8) {
+      throw new Error("Ref Finance testnet token metadata did not match the expected wNEAR/WBTC decimals.");
+    }
+    if (!Array.isArray(pools)) throw new Error("Ref Finance returned an invalid DCL pool list.");
+
+    const matchingPools = pools.filter((pool: any) =>
+      (pool.token_x === INPUT_TOKEN && pool.token_y === OUTPUT_TOKEN ||
+       pool.token_x === OUTPUT_TOKEN && pool.token_y === INPUT_TOKEN) &&
+      pool.state === "Running"
+    );
+
+    const quotes = await Promise.all(matchingPools.map(async (pool: any) => {
+      try {
+        const quote = await view(REF_DCL_CONTRACT, "quote", {
+          pool_ids: [pool.pool_id],
+          input_token: INPUT_TOKEN,
+          output_token: OUTPUT_TOKEN,
+          input_amount: amountIn,
+          tag: "meridian-dca-" + pool.fee + "-" + amountIn,
+        });
+        if (!quote || !/^\d+$/.test(String(quote.amount || "")) || BigInt(quote.amount) <= 0n) return null;
+        const minimumOut = (BigInt(quote.amount) * BigInt(10000 - slippageBps) / 10000n).toString();
+        return {
+          poolId: pool.pool_id,
+          fee: pool.fee,
+          state: pool.state,
+          liquidity: pool.liquidity || "0",
+          totalX: pool.total_x || "0",
+          totalY: pool.total_y || "0",
+          amountOut: String(quote.amount),
+          minimumOut,
+          amountOutFormatted: (Number(quote.amount) / 1e8).toFixed(8).replace(/0+$/, "").replace(/\.$/, ""),
+        };
+      } catch { return null; }
+    }));
+
+    const validQuotes = quotes.filter((quote): quote is NonNullable<typeof quote> => quote !== null)
+      .sort((a, b) => BigInt(a.amountOut) > BigInt(b.amountOut) ? -1 : BigInt(a.amountOut) < BigInt(b.amountOut) ? 1 : 0);
+
+    if (!validQuotes.length) {
+      return Response.json({
+        available: false,
+        error: matchingPools.length
+          ? "A Ref Finance WBTC/wNEAR pool is listed, but it did not return a usable quote for this amount."
+          : "No running Ref Finance testnet pool exists for wrap.testnet wNEAR and wbtc.ft.ref-labs.testnet. No transaction was sent.",
+        inputToken: { contractId: INPUT_TOKEN, symbol: inputMeta.symbol, decimals: inputMeta.decimals },
+        outputToken: { contractId: OUTPUT_TOKEN, symbol: outputMeta.symbol, decimals: outputMeta.decimals },
+        matchingPools,
+      }, { status: 404 });
+    }
+
+    return Response.json({
+      available: true,
+      network: "testnet",
+      dex: "Ref Finance",
+      exchangeContract: "ref-finance-101.testnet",
+      dclContract: REF_DCL_CONTRACT,
+      accountId,
+      amountIn,
+      amountInFormatted: (Number(amountIn) / 1e24).toString(),
+      inputToken: { contractId: INPUT_TOKEN, symbol: inputMeta.symbol, decimals: inputMeta.decimals },
+      outputToken: { contractId: OUTPUT_TOKEN, symbol: outputMeta.symbol, decimals: outputMeta.decimals },
+      inputRegistered: inputStorage !== null,
+      outputRegistered: outputStorage !== null,
+      outputStorageMinimum: outputBounds?.min || null,
+      slippageBps,
+      bestQuote: validQuotes[0],
+      alternatives: validQuotes,
+      poolCount: matchingPools.length,
+      checkedAt: new Date().toISOString(),
+    }, { headers: { "Cache-Control": "no-store" } });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unable to check Ref Finance testnet liquidity.";
+    return Response.json({ available: false, error: message }, { status: 502 });
+  }
+}
