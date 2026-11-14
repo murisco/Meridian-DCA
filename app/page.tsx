@@ -405,7 +405,7 @@ export default function Home() {
           <div className="quote-card">
             <div className="card-heading">
               <div><span className="step-number">02</span><h3>Quote preview</h3></div>
-              <span className="live-tag"><span className="pulse-dot" /> NEAR INTENTS
+              <span className="live-tag"><span className="pulse-dot" /> NEAR INTENTS</span>
             </div>
             {!quoteResult && !quoteLoading && (
               <div className="empty-quote">
