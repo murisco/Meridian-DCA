@@ -223,7 +223,7 @@ export async function POST(request: Request) {
           input_amount: amountIn,
           tag: "meridian-dca-" + pool.fee + "-" + amountIn,
         });
-        if (!quote || !/^\\d+$/.test(String(quote.amount || "")) || BigInt(quote.amount) <= 0n) {
+        if (!quote || !/^\d+$/.test(String(quote.amount || "")) || BigInt(quote.amount) <= 0n) {
           return {
             fee: Number(pool.fee),
             poolId,
