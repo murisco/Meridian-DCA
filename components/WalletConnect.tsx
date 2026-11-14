@@ -1,80 +1,33 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { NearConnector as NearConnectorType } from "@fastnear/near-connect";
-import type { InstantLinkWallet, WalletSelector } from "@near-wallet-selector/core";
-
-declare global {
-  interface Window {
-    ReactNativeWebView?: { postMessage: (message: string) => void };
-    __is_running_in_meteor_wallet_app__?: boolean;
-  }
-}
+import type { NearConnector as NearConnectorType } from "@hot-labs/near-connect";
 
 export default function WalletConnect() {
   const connectorRef = useRef<NearConnectorType | null>(null);
-  const meteorSelectorRef = useRef<WalletSelector | null>(null);
   const [accountId, setAccountId] = useState("");
   const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [error, setError] = useState("");
-  const [insideMeteorApp, setInsideMeteorApp] = useState(false);
-  const [mobileBrowser, setMobileBrowser] = useState(false);
-  const [showMeteorHelp, setShowMeteorHelp] = useState(false);
 
   useEffect(() => {
     let active = true;
     let connector: NearConnectorType | null = null;
 
     async function initialise() {
-      const userAgent = window.navigator.userAgent;
-      const isMobile = /iPhone|iPad|iPod|Android/i.test(userAgent) ||
-        (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-      const isMeteorApp = Boolean(
-        window.__is_running_in_meteor_wallet_app__ ||
-        window.ReactNativeWebView?.postMessage
-      );
-
-      if (!active) return;
-      setMobileBrowser(isMobile);
-      setInsideMeteorApp(isMeteorApp);
-
-      if (isMeteorApp) {
-        const [{ setupWalletSelector }, { setupMeteorWalletApp }] = await Promise.all([
-          import("@near-wallet-selector/core"),
-          import("@near-wallet-selector/meteor-wallet-app"),
-        ]);
-        const selector = await setupWalletSelector({
-          network: "testnet",
-          modules: [
-            setupMeteorWalletApp({
-              // This is metadata only for the account-only connection. MERIDIAN
-              // does not call signAndSendTransaction or request a contract key.
-              contractId: "meridian-dca.testnet",
-            }),
-          ],
-          allowMultipleSelectors: true,
-        });
-        if (!active) return;
-        meteorSelectorRef.current = selector;
-        selector.subscribeOnAccountChange((account) => {
-          if (active) setAccountId(account);
-        });
-        const selectedAccount = selector.store.getState().accounts.find((account) => account.active)?.accountId;
-        if (selectedAccount) setAccountId(selectedAccount);
-        setReady(true);
-        return;
-      }
-
-      const { NearConnector } = await import("@fastnear/near-connect");
+      // Keep the connector browser-only. It uses browser APIs and must not
+      // be constructed during Next.js server rendering.
+      const { NearConnector } = await import("@hot-labs/near-connect");
       const instance = new NearConnector({
         network: "testnet",
         features: { testnet: true },
-        autoConnect: false,
       });
-      connector = instance;
+
+      await instance.whenManifestLoaded;
       if (!active) return;
+
+      connector = instance;
       connectorRef.current = instance;
 
       instance.on("wallet:signIn", ({ accounts }) => {
@@ -87,13 +40,15 @@ export default function WalletConnect() {
         }
       });
 
-      await instance.whenManifestLoaded;
+      // Restore an existing browser wallet session when the connector has one.
       try {
-        const connected = await instance.getConnectedWallet();
-        if (active) setAccountId(connected.accounts[0]?.accountId ?? "");
+        const wallet = await instance.wallet();
+        const accounts = await wallet.getAccounts();
+        if (active) setAccountId(accounts[0]?.accountId ?? "");
       } catch {
-        // No saved testnet wallet session is a normal first-visit state.
+        // No saved wallet session is a normal first-visit state.
       }
+
       if (active) setReady(true);
     }
 
@@ -107,41 +62,31 @@ export default function WalletConnect() {
       active = false;
       connector?.removeAllListeners();
       if (connectorRef.current === connector) connectorRef.current = null;
-      meteorSelectorRef.current = null;
     };
   }, []);
 
   async function connect() {
     if (busy) return;
-
-    if (mobileBrowser && !insideMeteorApp) {
-      setShowMeteorHelp(true);
-      setError("");
+    const connector = connectorRef.current;
+    if (!connector) {
+      setError("Wallet connector is still loading. Try again.");
       return;
     }
 
     setBusy(true);
     setError("");
     try {
-      if (insideMeteorApp) {
-        const selector = meteorSelectorRef.current;
-        if (!selector) throw new Error("Meteor's in-app wallet connector is not ready. Reload this page inside Meteor Wallet.");
-        const wallet = await selector.wallet<InstantLinkWallet>("meteor-wallet-app");
-        const accounts = await wallet.signIn({});
-        const account = accounts[0]?.accountId ?? "";
-        if (!account) throw new Error("Meteor Wallet did not return a testnet account.");
-        setAccountId(account);
-        setMenuOpen(false);
-      } else {
-        const connector = connectorRef.current;
-        if (!connector) throw new Error("Wallet connector is still loading. Try again.");
-        const wallet = await connector.connect();
-        const accounts = await wallet.getAccounts({ network: "testnet" });
-        const account = accounts[0]?.accountId ?? "";
-        if (!account) throw new Error("The wallet connected but did not return an account.");
-        setAccountId(account);
-        setMenuOpen(false);
-      }
+      await connector.connect();
+
+      // NEAR Connect emits wallet:signIn when the user approves the account.
+      // Read the selected account from the connected wallet as a fallback.
+      const wallet = await connector.wallet();
+      const accounts = await wallet.getAccounts();
+      const account = accounts[0]?.accountId ?? "";
+      if (!account) throw new Error("The wallet connected but did not return an account.");
+
+      setAccountId(account);
+      setMenuOpen(false);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Wallet connection was cancelled or failed.");
     } finally {
@@ -151,19 +96,16 @@ export default function WalletConnect() {
 
   async function disconnect() {
     if (busy) return;
+    const connector = connectorRef.current;
+    if (!connector) {
+      setError("Wallet connector is not available.");
+      return;
+    }
+
     setBusy(true);
     setError("");
     try {
-      if (insideMeteorApp) {
-        const selector = meteorSelectorRef.current;
-        if (!selector) throw new Error("Meteor wallet connector is not available.");
-        const wallet = await selector.wallet("meteor-wallet-app");
-        await wallet.signOut();
-      } else {
-        const connector = connectorRef.current;
-        if (!connector) throw new Error("Wallet connector is not available.");
-        await connector.disconnect();
-      }
+      await connector.disconnect();
       setAccountId("");
       setMenuOpen(false);
     } catch (cause) {
@@ -213,14 +155,6 @@ export default function WalletConnect() {
           {busy ? "Connecting…" : ready ? "Connect Wallet" : "Loading wallet…"}
           <span aria-hidden="true">↗</span>
         </button>
-      )}
-      {showMeteorHelp && !insideMeteorApp && !accountId && (
-        <div className="wallet-connect-menu wallet-connect-help" role="status">
-          <span className="wallet-menu-label">CONNECT METEOR MOBILE APP</span>
-          <strong>Open MERIDIAN inside Meteor Wallet</strong>
-          <p>In Meteor Wallet, open Explore and open this dashboard there. Then tap Connect Wallet. Safari cannot connect directly to the installed Meteor app.</p>
-          <button type="button" onClick={() => setShowMeteorHelp(false)}>Got it</button>
-        </div>
       )}
       {error && <span className="wallet-connect-error" role="status">{error}</span>}
     </div>
