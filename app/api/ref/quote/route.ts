@@ -138,7 +138,7 @@ export async function POST(request: Request) {
           const inputReserve = BigInt(pool.supplies[INPUT_TOKEN]);
           const outputReserve = BigInt(pool.supplies[OUTPUT_TOKEN]);
           const fee = BigInt(pool.fee);
-          const amountWithFee = amountIn * (10000n - fee);
+          const amountWithFee = BigInt(amountIn) * (10000n - fee);
           const denominator = inputReserve * 10000n + amountWithFee;
           const amountOut = denominator > 0n ? amountWithFee * outputReserve / denominator : 0n;
           if (inputReserve <= 0n || outputReserve <= 0n || amountOut <= 0n) return null;
