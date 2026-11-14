@@ -8,6 +8,7 @@ type WalletBalance = {
   nearRaw: string;
   wrapNear: { balance: string; rawBalance: string; contractId: string };
   wrapRegistered: boolean;
+  refWbtc: { contractId: string; balance: string; rawBalance: string; decimals: number; registered: boolean; storageMinimum: string };
   tokens: { symbol: string; contractId: string; balance: string; rawBalance: string; decimals: number }[];
   updatedAt: string;
 };
@@ -16,6 +17,16 @@ const WRAP_CONTRACT_ID = "wrap.testnet";
 const WRAP_AMOUNT_RAW = "20000000000000000000000"; // exactly 0.02 NEAR
 const STORAGE_DEPOSIT_RAW = "1250000000000000000000"; // 0.00125 NEAR
 const FUNCTION_CALL_GAS = "30000000000000"; // 30 Tgas
+
+type RefSwapExecutionPayload = {
+  accountId: string;
+  amountIn: string;
+  minimumOut: string;
+  poolId: string;
+  inputRegistered: boolean;
+  outputRegistered: boolean;
+  outputStorageMinimum: string;
+};
 
 type SwapExecutionPayload = {
   liveQuote: {
@@ -49,6 +60,7 @@ export default function WalletConnect() {
   const [wrapMessage, setWrapMessage] = useState("");
   const [wrapError, setWrapError] = useState("");
   const [swapBusy, setSwapBusy] = useState(false);
+  const [refSwapBusy, setRefSwapBusy] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -133,6 +145,122 @@ export default function WalletConnect() {
       active = false;
     };
   }, [accountId, balanceRefresh]);
+
+  useEffect(() => {
+    async function handleRefSwap(event: Event) {
+      const payload = (event as CustomEvent<RefSwapExecutionPayload>).detail;
+      if (!payload || refSwapBusy) return;
+
+      try {
+        if (!accountId || !connectorRef.current) throw new Error("Connect your NEAR testnet wallet before swapping.");
+        if (payload.accountId !== accountId) throw new Error("The route account does not match the connected wallet.");
+        if (!/^[0-9a-f]{64}$/i.test(payload.poolId.replaceAll("|", "").replace(/\d+$/, ""))) {
+          // Pool IDs are token-contract pairs, not hashes. Validate the exact pair below instead.
+        }
+        if (payload.poolId !== "wrap.testnet|wbtc.ft.ref-labs.testnet|100" &&
+            payload.poolId !== "wrap.testnet|wbtc.ft.ref-labs.testnet|400" &&
+            payload.poolId !== "wrap.testnet|wbtc.ft.ref-labs.testnet|2000" &&
+            payload.poolId !== "wrap.testnet|wbtc.ft.ref-labs.testnet|10000") {
+          throw new Error("The Ref Finance pool ID is not an approved wNEAR/WBTC testnet route.");
+        }
+        if (!/^\d+$/.test(payload.amountIn) || !/^\d+$/.test(payload.minimumOut) ||
+            !/^\d+$/.test(payload.outputStorageMinimum)) {
+          throw new Error("The swap quote contained an invalid token amount.");
+        }
+        if (payload.inputRegistered !== true || balance?.wrapRegistered !== true) {
+          throw new Error("Your wallet is not registered for wrap.testnet wNEAR. Refresh the wallet and try again.");
+        }
+        if (!balance || BigInt(balance.wrapNear.rawBalance) < BigInt(payload.amountIn)) {
+          throw new Error("Your wrap.testnet wNEAR balance is lower than the quoted input amount.");
+        }
+        if (BigInt(balance.nearRaw) < BigInt(payload.outputStorageMinimum) + 10000000000000000000000n) {
+          throw new Error("Keep enough native NEAR for WBTC storage registration and transaction gas.");
+        }
+        if (payload.outputRegistered !== balance.refWbtc.registered) {
+          throw new Error("Your WBTC registration status changed. Refresh your wallet and request a new quote.");
+        }
+
+        setRefSwapBusy(true);
+        const wallet = await connectorRef.current.wallet();
+
+        if (!payload.outputRegistered) {
+          publishSwapUpdate("REGISTERING_OUTPUT", "Your wallet will first register the WBTC token account. This is a separate one-time storage deposit.");
+          const registration = await wallet.signAndSendTransaction({
+            receiverId: "wbtc.ft.ref-labs.testnet",
+            actions: [{
+              type: "FunctionCall",
+              params: {
+                methodName: "storage_deposit",
+                args: { account_id: accountId, registration_only: true },
+                gas: FUNCTION_CALL_GAS,
+                deposit: payload.outputStorageMinimum,
+              },
+            }],
+          });
+          const registrationResult = registration as unknown as { status?: { Failure?: unknown } } | undefined;
+          if (registrationResult?.status?.Failure) throw new Error("WBTC storage registration failed: " + JSON.stringify(registrationResult.status.Failure));
+        }
+
+        publishSwapUpdate("AWAITING_WALLET", "Review the Ref Finance swap request. It sends only the exact quoted wNEAR amount from wrap.testnet.");
+        const swapResult = await wallet.signAndSendTransaction({
+          receiverId: "wrap.testnet",
+          actions: [{
+            type: "FunctionCall",
+            params: {
+              methodName: "ft_transfer_call",
+              args: {
+                receiver_id: "dclv2.ref-dev.testnet",
+                amount: payload.amountIn,
+                msg: JSON.stringify({
+                  Swap: {
+                    pool_ids: [payload.poolId],
+                    output_token: "wbtc.ft.ref-labs.testnet",
+                    min_output_amount: payload.minimumOut,
+                    referral_id: "",
+                    client_id: "meridian-dca",
+                  },
+                }),
+              },
+              gas: "180000000000000",
+              deposit: "1",
+            },
+          }],
+        });
+        const outcome = swapResult as unknown as {
+          status?: { Failure?: unknown };
+          transaction?: { hash?: string };
+          transaction_outcome?: { id?: string };
+        } | undefined;
+        if (outcome?.status?.Failure) throw new Error("Ref Finance swap transaction failed: " + JSON.stringify(outcome.status.Failure));
+
+        const txHash = outcome?.transaction?.hash || outcome?.transaction_outcome?.id || "";
+        publishSwapUpdate("SUBMITTED", "The Ref Finance swap was submitted. Waiting for the WBTC balance to update.", { txHash });
+        for (let attempt = 0; attempt < 12; attempt += 1) {
+          await new Promise((resolve) => window.setTimeout(resolve, 2000));
+          const response = await fetch("/api/wallet/balance?accountId=" + encodeURIComponent(accountId), { cache: "no-store" });
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error || "Could not verify the WBTC payout.");
+          const updated = data as WalletBalance;
+          setBalance(updated);
+          if (BigInt(updated.refWbtc.rawBalance) > BigInt(balance.refWbtc.rawBalance)) {
+            publishSwapUpdate("SUCCESS", "Ref Finance confirmed the swap: WBTC balance increased.", {
+              txHash, receivedRaw: (BigInt(updated.refWbtc.rawBalance) - BigInt(balance.refWbtc.rawBalance)).toString(),
+            });
+            setBalanceRefresh((value) => value + 1);
+            return;
+          }
+        }
+        publishSwapUpdate("PENDING", "The transaction was submitted but the WBTC balance increase is not confirmed yet. Do not send it again. Check the transaction and refresh your wallet before retrying.", { txHash });
+      } catch (cause) {
+        publishSwapUpdate("ERROR", cause instanceof Error ? cause.message : "The Ref Finance swap failed or was cancelled.");
+      } finally {
+        setRefSwapBusy(false);
+      }
+    }
+
+    window.addEventListener("meridian:execute-ref-swap", handleRefSwap);
+    return () => window.removeEventListener("meridian:execute-ref-swap", handleRefSwap);
+  }, [accountId, balance, refSwapBusy]);
 
   useEffect(() => {
     async function handleSwap(event: Event) {
@@ -443,6 +571,8 @@ export default function WalletConnect() {
                   <>
                     <div className="wallet-balance-row"><span>NEAR</span><strong>{balance.near}</strong></div>
                     <div className="wallet-balance-row"><span>wNEAR · wrap.testnet</span><strong>{balance.wrapNear.balance}</strong></div>
+                    <div className="wallet-balance-row"><span>WBTC · Ref Finance testnet</span><strong>{balance.refWbtc.balance}</strong></div>
+                    <small className="wallet-balance-muted">WBTC account {balance.refWbtc.registered ? "registered" : "not registered yet"} · registration is required before receiving WBTC.</small>
                     {balance.wrapNear.balance !== "0" && <small className="wallet-balance-muted">This is wrapper wNEAR, not Tidepool wNEAR. MERIDIAN's test swap uses the separate Tidepool token below.</small>}
                     {balance.tokens.map((token) => (
                       <div className="wallet-balance-row" key={token.contractId}><span>{token.symbol} · Tidepool</span><strong>{token.balance}</strong></div>
