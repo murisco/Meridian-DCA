@@ -90,7 +90,9 @@ export async function GET(request: Request) {
         if (!/^\d+$/.test(balanceRaw) || BigInt(balanceRaw) === 0n) return null;
         return {
           symbol: token.symbol,
+          contractId: token.contractId,
           balance: formatUnits(balanceRaw, token.decimals, 6),
+          rawBalance: balanceRaw,
           decimals: token.decimals,
         };
       } catch {
