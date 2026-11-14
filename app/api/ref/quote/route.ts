@@ -76,12 +76,18 @@ export async function POST(request: Request) {
     if (inputMeta.decimals !== 24 || outputMeta.decimals !== 8) {
       throw new Error("Ref Finance testnet token metadata did not match the expected wNEAR/WBTC decimals.");
     }
+    if (typeof outputBounds?.min !== "string" || !/^\d+$/.test(outputBounds.min)) {
+      throw new Error("Ref Finance did not return a valid WBTC storage-registration minimum.");
+    }
     if (!Array.isArray(pools)) throw new Error("Ref Finance returned an invalid DCL pool list.");
 
+    const allowedFees = new Set([100, 400, 2000, 10000]);
     const matchingPools = pools.filter((pool: any) =>
       (pool.token_x === INPUT_TOKEN && pool.token_y === OUTPUT_TOKEN ||
        pool.token_x === OUTPUT_TOKEN && pool.token_y === INPUT_TOKEN) &&
-      pool.state === "Running"
+      pool.state === "Running" &&
+      allowedFees.has(Number(pool.fee)) &&
+      typeof pool.pool_id === "string"
     );
 
     const quotes = await Promise.all(matchingPools.map(async (pool: any) => {
