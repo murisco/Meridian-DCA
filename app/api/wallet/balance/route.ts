@@ -172,7 +172,7 @@ export async function GET(request: Request) {
     const wrapRegistered = wrapStorage !== null;
 
     const refWbtcBalanceRawValue = decodeJsonResult(refWbtcBalanceResult.result?.result);
-    if (typeof refWbtcBalanceRawValue !== "string" || !/^\\d+$/.test(refWbtcBalanceRawValue)) {
+    if (typeof refWbtcBalanceRawValue !== "string" || !/^\d+$/.test(refWbtcBalanceRawValue)) {
       throw new Error("Could not verify the Ref Finance testnet WBTC balance.");
     }
     const refWbtcStorage = decodeJsonResult(refWbtcStorageResult.result?.result);
@@ -180,7 +180,7 @@ export async function GET(request: Request) {
       throw new Error("Ref Finance WBTC returned an unexpected storage-registration response.");
     }
     const refWbtcBounds = decodeJsonResult(refWbtcBoundsResult.result?.result);
-    if (!refWbtcBounds || typeof refWbtcBounds !== "object" || !("min" in refWbtcBounds) || typeof refWbtcBounds.min !== "string" || !/^\\d+$/.test(refWbtcBounds.min)) {
+    if (!refWbtcBounds || typeof refWbtcBounds !== "object" || !("min" in refWbtcBounds) || typeof refWbtcBounds.min !== "string" || !/^\d+$/.test(refWbtcBounds.min)) {
       throw new Error("Could not read Ref Finance WBTC storage registration requirement.");
     }
 
