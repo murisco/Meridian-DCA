@@ -1,4 +1,4 @@
-import { fetchIntentTokens, getIntentsHeaders, toBaseUnits } from "@/lib/intents";
+import { fetchIntentTokens, getIntentsApiBase, getIntentsHeaders, toBaseUnits, type IntentNetwork } from "@/lib/intents";
 
 type QuoteInput = {
   originAsset?: unknown;
@@ -7,6 +7,7 @@ type QuoteInput = {
   recipient?: unknown;
   refundTo?: unknown;
   slippageTolerance?: unknown;
+  network?: unknown;
 };
 
 const cleanText = (value: unknown) =>
@@ -26,6 +27,7 @@ export async function POST(request: Request) {
   const recipient = cleanText(input.recipient);
   const refundTo = cleanText(input.refundTo);
   const slippageTolerance = Number(input.slippageTolerance ?? 100);
+  const network: IntentNetwork = input.network === "testnet" ? "testnet" : "mainnet";
 
   if (!originAsset || !destinationAsset || originAsset === destinationAsset) {
     return Response.json({ error: "Choose two different supported assets." }, { status: 400 });
@@ -38,7 +40,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const assets = await fetchIntentTokens();
+    const assets = await fetchIntentTokens(network);
     const origin = assets.find((asset) => asset.assetId === originAsset);
     const destination = assets.find((asset) => asset.assetId === destinationAsset);
     if (!origin || !destination) {
@@ -64,9 +66,9 @@ export async function POST(request: Request) {
       referral: "meridian-dca",
     };
 
-    const upstream = await fetch("https://1click.chaindefuser.com/v0/quote", {
+    const upstream = await fetch(getIntentsApiBase(network) + "/v0/quote", {
       method: "POST",
-      headers: getIntentsHeaders(),
+      headers: getIntentsHeaders(network),
       body: JSON.stringify(quoteRequest),
       cache: "no-store",
     });
@@ -82,6 +84,8 @@ export async function POST(request: Request) {
 
     return Response.json({
       dry: true,
+      network,
+      provider: network === "testnet" ? "Tidepool testnet sandbox" : "NEAR Intents 1Click mainnet",
       quote: data,
       assets: {
         origin: { symbol: origin.symbol, blockchain: origin.blockchain, decimals: origin.decimals },
@@ -95,9 +99,11 @@ export async function POST(request: Request) {
         recipientType: "DESTINATION_CHAIN",
         refundType: "ORIGIN_CHAIN",
       },
-      feeNote: process.env.NEAR_INTENTS_JWT
-        ? "Authenticated NEAR Intents fee schedule is in use."
-        : "Unauthenticated quotes may include an additional 0.25% NEAR Intents fee on eligible routes.",
+      feeNote: network === "testnet"
+        ? "Tidepool is a community-operated testnet sandbox, not affiliated with NEAR or Defuse. Test tokens have no value."
+        : process.env.NEAR_INTENTS_JWT
+          ? "Authenticated NEAR Intents fee schedule is in use."
+          : "Unauthenticated quotes may include an additional 0.25% NEAR Intents fee on eligible routes.",
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to create quote.";
