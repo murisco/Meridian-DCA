@@ -527,8 +527,10 @@ export default function Home() {
                 <div className="quote-pair">{quoteResult.assets.origin.symbol} on {quoteResult.assets.origin.blockchain.toUpperCase()} <span>→</span> {quoteResult.assets.destination.symbol} on {quoteResult.assets.destination.blockchain.toUpperCase()}</div>
                 <div className="quote-divider" />
                 <div className="quote-detail"><span>Input amount</span><strong>{quoteData.amountInFormatted || amount} {origin?.symbol}</strong></div>
-                <div className="quote-detail"><span>Minimum output</span><strong>{quoteData.minAmountOut ? formatBaseUnits(quoteData.minAmountOut, destination?.decimals || 0) : "See quote details"} {destination?.symbol}</strong></div>
+                <div className="quote-detail"><span>Minimum output</span><strong>{quoteData.minAmountOut ? formatBaseUnits(quoteData.minAmountOut, destination?.decimals || 0) : "Not provided"} {destination?.symbol}</strong></div>
+                <div className="quote-detail"><span>Slippage guard</span><strong>{quoteResult.quoteControls?.slippagePercent || (Number(slippage) / 100).toFixed(2)}% maximum</strong></div>
                 <div className="quote-detail"><span>Estimated route time</span><strong>{typeof quoteData.timeEstimate === "number" ? Math.max(1, Math.round(quoteData.timeEstimate / 60)) + " min" : "Not provided"}</strong></div>
+                {quoteData.deadline && <div className="quote-detail"><span>Quote deadline</span><strong>{formatDate(quoteData.deadline)}</strong></div>}
                 <div className="quote-detail"><span>Quote reference</span><strong className="reference">{quoteResult.quote.correlationId ? shorten(quoteResult.quote.correlationId) : "Generated"}</strong></div>
                 <div className="quote-warning"><b>Preview only.</b> No deposit address was generated and no funds were moved.</div>
                 <p className="fee-note">{quoteResult.feeNote}</p>
