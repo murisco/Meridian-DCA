@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useLayoutEffect, useState } from "react";
 import WalletConnect from "@/components/WalletConnect";
 
 type IntentNetwork = "mainnet" | "testnet";
