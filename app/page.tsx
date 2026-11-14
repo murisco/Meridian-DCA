@@ -11,6 +11,8 @@ type Asset = {
   priceUpdatedAt?: string;
 };
 
+type DryRunStatus = "PASSED" | "BLOCKED" | "UNVERIFIED" | "ERROR";
+
 type Plan = {
   id: string;
   sourceAssetId: string;
@@ -26,6 +28,15 @@ type Plan = {
   slippage: number;
   nextRunAt: string;
   createdAt: string;
+  lastDryRun?: {
+    checkedAt: string;
+    status: DryRunStatus;
+    message: string;
+    output?: string;
+    minimumOutput?: string;
+    quoteReference?: string;
+    deadline?: string;
+  };
 };
 
 type QuoteResult = {
@@ -34,6 +45,7 @@ type QuoteResult = {
     correlationId?: string;
     quote?: {
       amountInFormatted?: string;
+      amountOut?: string;
       amountOutFormatted?: string;
       minAmountOut?: string;
       amountOutUsd?: string;
@@ -42,6 +54,7 @@ type QuoteResult = {
       deadline?: string;
     };
     amountInFormatted?: string;
+    amountOut?: string;
     amountOutFormatted?: string;
     minAmountOut?: string;
     amountOutUsd?: string;
@@ -50,8 +63,16 @@ type QuoteResult = {
     deadline?: string;
   };
   assets: {
-    origin: { symbol: string; blockchain: string };
-    destination: { symbol: string; blockchain: string };
+    origin: { symbol: string; blockchain: string; decimals?: number };
+    destination: { symbol: string; blockchain: string; decimals?: number };
+  };
+  quoteControls?: {
+    slippageTolerance: number;
+    slippagePercent: string;
+    deadline: string;
+    depositType: string;
+    recipientType: string;
+    refundType: string;
   };
   feeNote: string;
 };
@@ -108,6 +129,7 @@ export default function Home() {
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [quoteError, setQuoteError] = useState("");
   const [plans, setPlans] = useState<Plan[]>([]);
+  const [checkingPlanId, setCheckingPlanId] = useState<string | null>(null);
   const [storageReady, setStorageReady] = useState(false);
 
   useEffect(() => {
@@ -237,6 +259,87 @@ export default function Home() {
 
   function removePlan(id: string) {
     setPlans((current) => current.filter((plan) => plan.id !== id));
+  }
+
+  async function previewSavedPlan(plan: Plan) {
+    if (checkingPlanId) return;
+    setCheckingPlanId(plan.id);
+
+    try {
+      const response = await fetch("/api/quote", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          originAsset: plan.sourceAssetId,
+          destinationAsset: plan.destinationAssetId,
+          amount: plan.amount,
+          recipient: plan.recipient,
+          refundTo: plan.refundTo,
+          slippageTolerance: plan.slippage,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Quote request failed.");
+
+      const result = data as QuoteResult;
+      if (result.dry !== true) throw new Error("The API did not confirm dry-run mode. No plan check was saved.");
+      const quoteData = result.quote?.quote || result.quote;
+      if (!quoteData) throw new Error("The quote response did not contain pricing details.");
+
+      const amountOutRaw = quoteData.amountOut || "";
+      const minimumOutRaw = quoteData.minAmountOut || "";
+      let status: DryRunStatus = "UNVERIFIED";
+      let message = "Quote received, but minimum-output data was unavailable for the local slippage check.";
+
+      if (/^\d+$/.test(amountOutRaw) && /^\d+$/.test(minimumOutRaw)) {
+        const amountOut = BigInt(amountOutRaw);
+        const minimumOut = BigInt(minimumOutRaw);
+        if (amountOut > 0n && minimumOut <= amountOut) {
+          const impliedSlippageBps = ((amountOut - minimumOut) * 10000n) / amountOut;
+          if (impliedSlippageBps <= BigInt(plan.slippage)) {
+            status = "PASSED";
+            message = "Minimum output is within the saved slippage limit of " + (plan.slippage / 100).toFixed(2) + "%.";
+          } else {
+            status = "BLOCKED";
+            message = "Quote blocked: minimum output exceeds the saved slippage limit of " + (plan.slippage / 100).toFixed(2) + "%.";
+          }
+        } else {
+          status = "BLOCKED";
+          message = "Quote blocked because its minimum output is not consistent with its expected output.";
+        }
+      }
+
+      const destinationDecimals = result.assets.destination.decimals ?? 0;
+      const output = quoteData.amountOutFormatted || "";
+      const minimumOutput = minimumOutRaw
+        ? formatBaseUnits(minimumOutRaw, destinationDecimals) + " " + plan.destinationSymbol
+        : undefined;
+
+      setPlans((current) => current.map((item) => item.id === plan.id ? {
+        ...item,
+        lastDryRun: {
+          checkedAt: new Date().toISOString(),
+          status,
+          message,
+          output: output ? output + " " + plan.destinationSymbol : undefined,
+          minimumOutput,
+          quoteReference: result.quote.correlationId,
+          deadline: quoteData.deadline,
+        },
+      } : item));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to check this plan.";
+      setPlans((current) => current.map((item) => item.id === plan.id ? {
+        ...item,
+        lastDryRun: {
+          checkedAt: new Date().toISOString(),
+          status: "ERROR",
+          message,
+        },
+      } : item));
+    } finally {
+      setCheckingPlanId(null);
+    }
   }
 
   return (
@@ -452,11 +555,21 @@ export default function Home() {
             {plans.map((plan) => (
               <article className="plan-row" key={plan.id}>
                 <div className="plan-pair-icon">{plan.sourceSymbol.slice(0, 1)}<span>↗</span>{plan.destinationSymbol.slice(0, 1)}</div>
-                <div className="plan-main"><strong>{plan.sourceSymbol} <span>→</span> {plan.destinationSymbol}</strong><small>{plan.sourceChain.toUpperCase()} to {plan.destinationChain.toUpperCase()} · {plan.frequency.toLowerCase()}</small></div>
+                <div className="plan-main">
+                  <strong>{plan.sourceSymbol} <span>→</span> {plan.destinationSymbol}</strong>
+                  <small>{plan.sourceChain.toUpperCase()} to {plan.destinationChain.toUpperCase()} · {plan.frequency.toLowerCase()}</small>
+                  {plan.lastDryRun && <small className={"plan-check-result " + plan.lastDryRun.status.toLowerCase()}>{plan.lastDryRun.status}: {plan.lastDryRun.message}</small>}
+                  {plan.lastDryRun?.output && <small className="plan-check-detail">Expected {plan.lastDryRun.output}{plan.lastDryRun.minimumOutput ? " · Minimum " + plan.lastDryRun.minimumOutput : ""}</small>}
+                </div>
                 <div className="plan-amount"><strong>{plan.amount} {plan.sourceSymbol}</strong><small>Per interval</small></div>
-                <div className="plan-next"><strong>{formatDate(plan.nextRunAt)}</strong><small>Planned next date</small></div>
-                <div className="plan-status">PLANNED ONLY</div>
-                <button className="remove-plan" type="button" onClick={() => removePlan(plan.id)} aria-label={"Remove " + plan.sourceSymbol + " to " + plan.destinationSymbol + " plan"}>×</button>
+                <div className="plan-next"><strong>{formatDate(plan.nextRunAt)}</strong><small>Planned next date</small>{plan.lastDryRun && <small>Checked {formatDate(plan.lastDryRun.checkedAt)}</small>}</div>
+                <div className="plan-actions">
+                  <div className="plan-status">PLANNED ONLY</div>
+                  <button className="plan-preview" type="button" onClick={() => previewSavedPlan(plan)} disabled={checkingPlanId !== null} aria-label={"Check next dry-run quote for " + plan.sourceSymbol + " to " + plan.destinationSymbol}>
+                    {checkingPlanId === plan.id ? "Checking…" : "Check quote"}
+                  </button>
+                  <button className="remove-plan" type="button" onClick={() => removePlan(plan.id)} aria-label={"Remove " + plan.sourceSymbol + " to " + plan.destinationSymbol + " plan"}>×</button>
+                </div>
               </article>
             ))}
           </div>
