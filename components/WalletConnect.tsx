@@ -158,10 +158,10 @@ export default function WalletConnect() {
       try {
         if (!accountId || !connectorRef.current) throw new Error("Connect your NEAR testnet wallet before swapping.");
         if (payload.accountId !== accountId) throw new Error("The route account does not match the connected wallet.");
-        if (payload.poolId !== "wbtc.ft.ref-labs.testnet|wrap.testnet|100" &&
-            payload.poolId !== "wbtc.ft.ref-labs.testnet|wrap.testnet|400" &&
-            payload.poolId !== "wbtc.ft.ref-labs.testnet|wrap.testnet|2000" &&
-            payload.poolId !== "wbtc.ft.ref-labs.testnet|wrap.testnet|10000") {
+        if (payload.poolId !== "wbtc.fakes.testnet|wrap.testnet|100" &&
+            payload.poolId !== "wbtc.fakes.testnet|wrap.testnet|400" &&
+            payload.poolId !== "wbtc.fakes.testnet|wrap.testnet|2000" &&
+            payload.poolId !== "wbtc.fakes.testnet|wrap.testnet|10000") {
           throw new Error("The Ref Finance pool ID is not an approved wNEAR/WBTC testnet route.");
         }
         if (!/^\d+$/.test(payload.amountIn) || !/^\d+$/.test(payload.minimumOut) ||
@@ -188,7 +188,7 @@ export default function WalletConnect() {
         if (!payload.outputRegistered) {
           publishSwapUpdate("REGISTERING_OUTPUT", "Your wallet will first register the WBTC token account. This is a separate one-time storage deposit.");
           const registration = await wallet.signAndSendTransaction({
-            receiverId: "wbtc.ft.ref-labs.testnet",
+            receiverId: "wbtc.fakes.testnet",
             actions: [{
               type: "FunctionCall" as const,
               params: {
@@ -216,7 +216,7 @@ export default function WalletConnect() {
                 msg: JSON.stringify({
                   Swap: {
                     pool_ids: [payload.poolId],
-                    output_token: "wbtc.ft.ref-labs.testnet",
+                    output_token: "wbtc.fakes.testnet",
                     min_output_amount: payload.minimumOut,
                     referral_id: "",
                     client_id: "meridian-dca",
