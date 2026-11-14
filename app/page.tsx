@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useLayoutEffect, useMemo, useState } from "react";
 import WalletConnect from "@/components/WalletConnect";
 
 type Asset = {
@@ -169,6 +169,15 @@ function validatePlanAmount(value: string, decimals: number) {
 
 
 export default function Home() {
+  // A browser refresh can restore the previous scroll position (or a saved
+  // section hash such as #plans). Always start a fresh dashboard load at top.
+  useLayoutEffect(() => {
+    if ("scrollRestoration" in window.history) {
+      window.history.scrollRestoration = "manual";
+    }
+    window.scrollTo(0, 0);
+  }, []);
+
   const [assets, setAssets] = useState<Asset[]>([]);
   const [assetsLoading, setAssetsLoading] = useState(true);
   const [assetError, setAssetError] = useState("");
