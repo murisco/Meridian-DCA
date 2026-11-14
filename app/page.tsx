@@ -672,7 +672,7 @@ export default function Home() {
             </div>
             <div className="route-visual-bottom">
               <div><span>ROUTING LAYER</span><strong>NEAR Intents</strong></div>
-              <div><span>EXECUTION</span><strong>Wallet approval required</strong></div>
+              <div><span>EXECUTION</span><strong>{network === "testnet" ? "Wallet approval required" : "Preview only"}</strong></div>
             </div>
             <div className="visual-footnote">Illustrative route view · actual output comes from each quote</div>
           </div>
@@ -700,7 +700,7 @@ export default function Home() {
         <div><span className="metric-label">ROUTING LAYER</span><strong>NEAR Intents</strong></div>
         <div><span className="metric-label">ASSET UNIVERSE</span><strong>{assetsLoading ? "Loading…" : assets.length.toLocaleString() + " assets"}</strong></div>
         <div><span className="metric-label">QUOTE MODE</span><strong>Real-time preview</strong></div>
-        <div><span className="metric-label">EXECUTION</span><strong>Testnet · wallet approved</strong></div>
+        <div><span className="metric-label">EXECUTION</span><strong>{network === "testnet" ? "Testnet · wallet approved" : "Mainnet · preview only"}</strong></div>
       </section>
 
       <section className="section-heading" id="planner">
