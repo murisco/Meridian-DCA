@@ -187,35 +187,33 @@ export async function POST(request: Request) {
       // Fall through to the direct DCL quote check if the indexer is unavailable.
     }
 
-    // Discover the DCL pools that actually exist on Ref testnet.
-    // Ref SDK's listDCLPools() calls list_pools with no arguments.
-    let dclPools: any[] = [];
-    let dclDiscoveryError: string | null = null;
-    try {
-      const discovered = await view(REF_DCL_CONTRACT, "list_pools");
-      if (!Array.isArray(discovered)) {
-        throw new Error("Ref DCL list_pools did not return a pool array.");
+    // Ref's full list_pools view exceeds the testnet view-gas limit.
+    // Query only the four exact candidate IDs with the SDK's getDCLPool() method.
+    const feeTiers = [100, 400, 2000, 10000];
+    const candidatePoolChecks = await Promise.all(feeTiers.map(async (fee) => {
+      const poolId = [INPUT_TOKEN, OUTPUT_TOKEN].sort().join("|") + "|" + fee;
+      try {
+        const pool = await view(REF_DCL_CONTRACT, "get_pool", { pool_id: poolId });
+        const matchesPair =
+          (pool?.token_x === INPUT_TOKEN && pool?.token_y === OUTPUT_TOKEN) ||
+          (pool?.token_x === OUTPUT_TOKEN && pool?.token_y === INPUT_TOKEN);
+        const running = String(pool?.state || "").toLowerCase() === "running";
+        if (!pool || !matchesPair || !running) {
+          return { fee, poolId, pool: null, error: !pool ? "Pool was not returned." : "Pool exists but is not running or does not match the requested pair." };
+        }
+        return { fee, poolId, pool, error: null };
+      } catch (error) {
+        return { fee, poolId, pool: null, error: error instanceof Error ? error.message : "Pool lookup failed." };
       }
-      dclPools = discovered;
-    } catch (error) {
-      dclDiscoveryError = error instanceof Error ? error.message : "Unable to list Ref DCL pools.";
-    }
+    }));
 
-    const matchingDclPools = dclPools.filter((pool) => {
-      const tokenX = String(pool.token_x || "");
-      const tokenY = String(pool.token_y || "");
-      const pairMatches =
-        (tokenX === INPUT_TOKEN && tokenY === OUTPUT_TOKEN) ||
-        (tokenX === OUTPUT_TOKEN && tokenY === INPUT_TOKEN);
-      return pairMatches && String(pool.state || "").toLowerCase() === "running" &&
-        typeof pool.pool_id === "string";
-    });
+    const matchingDclPools = candidatePoolChecks
+      .filter((item) => item.pool !== null)
+      .map((item) => ({ fee: item.fee, poolId: item.poolId, ...item.pool }));
 
     const quoteChecks = await Promise.all(matchingDclPools.map(async (pool) => {
-      const poolId = String(pool.pool_id);
+      const poolId = String(pool.pool_id || pool.poolId);
       try {
-        // The Ref SDK passes token contract IDs to the on-chain view method.
-        // Its public helper accepts metadata but converts metadata.id before RPC.
         const quote = await view(REF_DCL_CONTRACT, "quote", {
           pool_ids: [poolId],
           input_token: INPUT_TOKEN,
@@ -223,16 +221,8 @@ export async function POST(request: Request) {
           input_amount: amountIn,
           tag: "meridian-dca-" + pool.fee + "-" + amountIn,
         });
-        if (!quote || !/^\d+$/.test(String(quote.amount || "")) || BigInt(quote.amount) <= 0n) {
-          return {
-            fee: Number(pool.fee),
-            poolId,
-            quote: null,
-            error: "Ref returned no positive output for this discovered pool.",
-            liquidity: String(pool.liquidity || "0"),
-            totalX: String(pool.total_x || "0"),
-            totalY: String(pool.total_y || "0"),
-          };
+        if (!quote || !/^\\d+$/.test(String(quote.amount || "")) || BigInt(quote.amount) <= 0n) {
+          return { fee: Number(pool.fee), poolId, quote: null, error: "Ref returned no positive output for this pool." };
         }
         const minimumOut = (BigInt(quote.amount) * BigInt(10000 - slippageBps) / 10000n).toString();
         return {
@@ -252,15 +242,7 @@ export async function POST(request: Request) {
           error: null,
         };
       } catch (error) {
-        return {
-          fee: Number(pool.fee),
-          poolId,
-          quote: null,
-          error: error instanceof Error ? error.message : "DCL quote failed.",
-          liquidity: String(pool.liquidity || "0"),
-          totalX: String(pool.total_x || "0"),
-          totalY: String(pool.total_y || "0"),
-        };
+        return { fee: Number(pool.fee), poolId, quote: null, error: error instanceof Error ? error.message : "DCL quote failed." };
       }
     }));
 
@@ -270,26 +252,18 @@ export async function POST(request: Request) {
       .sort((a, b) => BigInt(a.amountOut) > BigInt(b.amountOut) ? -1 : BigInt(a.amountOut) < BigInt(b.amountOut) ? 1 : 0);
 
     if (!validQuotes.length) {
-      const reason = matchingDclPools.length === 0
-        ? "Ref Finance has no running DCL pool for wrap.testnet → wbtc.fakes.testnet."
-        : "Ref Finance found " + matchingDclPools.length + " matching DCL pool(s), but none returned a usable quote.";
       return Response.json({
         available: false,
-        error: reason + " No transaction was sent.",
+        error: "No running Ref Finance DCL pool returned a usable wNEAR/WBTC quote. No transaction was sent.",
         discovery: {
-          dclPoolCount: dclPools.length,
-          matchingDclPools: matchingDclPools.map((pool) => ({
-            poolId: pool.pool_id,
-            fee: pool.fee,
-            state: pool.state,
-            liquidity: pool.liquidity,
-            totalX: pool.total_x,
-            totalY: pool.total_y,
+          method: "get_pool by exact pool ID",
+          attemptedPoolIds: candidatePoolChecks.map((item) => item.poolId),
+          poolChecks: candidatePoolChecks.map(({fee,poolId,pool,error}) => ({
+            fee, poolId, found: !!pool, state: pool?.state || null,
+            tokenX: pool?.token_x || null, tokenY: pool?.token_y || null,
+            liquidity: pool?.liquidity || null, error
           })),
-          dclDiscoveryError,
-          quoteChecks: quoteChecks.map(({fee,poolId,quote,error,liquidity,totalX,totalY}) => ({
-            fee, poolId, available: !!quote, error, liquidity, totalX, totalY
-          })),
+          quoteChecks: quoteChecks.map(({fee,poolId,quote,error}) => ({fee,poolId,available:!!quote,error})),
         },
         inputToken: { contractId: INPUT_TOKEN, symbol: inputMeta.symbol, decimals: inputMeta.decimals },
         outputToken: { contractId: OUTPUT_TOKEN, symbol: outputMeta.symbol, decimals: outputMeta.decimals },
@@ -327,6 +301,7 @@ export async function GET() {
   const metadataChecks = await Promise.all([
     { step: "wNEAR metadata", contract: INPUT_TOKEN, method: "ft_metadata" },
     { step: "WBTC metadata", contract: OUTPUT_TOKEN, method: "ft_metadata" },
+    { step: "USDT testnet metadata", contract: "usdt.fakes.testnet", method: "ft_metadata" },
     { step: "WBTC storage bounds", contract: OUTPUT_TOKEN, method: "storage_balance_bounds" },
   ].map(async (item) => {
     try {
@@ -340,45 +315,40 @@ export async function GET() {
     }
   }));
 
-  const [dclResult, classicResult] = await Promise.all([
-    view(REF_DCL_CONTRACT, "list_pools")
-      .then((data) => ({ ok: Array.isArray(data), pools: Array.isArray(data) ? data : [], error: null }))
-      .catch((error) => ({ ok: false, pools: [], error: error instanceof Error ? error.message : "DCL pool discovery failed." })),
-    fetch(REF_TESTNET_INDEXER + "/fetchAllPools", {
-      headers: { Accept: "application/json" },
-      cache: "no-store",
-      signal: AbortSignal.timeout(12000),
-    })
-      .then(async (response) => {
-        if (!response.ok) throw new Error("Ref indexer returned HTTP " + response.status);
-        const data = await response.json() as { simplePools?: any[] };
-        return { ok: true, pools: Array.isArray(data.simplePools) ? data.simplePools : [], error: null };
-      })
-      .catch((error) => ({ ok: false, pools: [], error: error instanceof Error ? error.message : "Classic pool discovery failed." })),
-  ]);
+  const candidateIds = [
+    ...[100, 400, 2000, 10000].map((fee) => ({
+      pair: "wrap.testnet / wbtc.fakes.testnet",
+      poolId: ["wrap.testnet", "wbtc.fakes.testnet"].sort().join("|") + "|" + fee,
+    })),
+    {
+      pair: "usdt.fakes.testnet / wrap.testnet (Ref SDK documented testnet example)",
+      poolId: "usdt.fakes.testnet|wrap.testnet|2000",
+    },
+  ];
 
-  const matchingDclPools = dclResult.pools.filter((pool) =>
-    ((pool.token_x === INPUT_TOKEN && pool.token_y === OUTPUT_TOKEN) ||
-     (pool.token_x === OUTPUT_TOKEN && pool.token_y === INPUT_TOKEN)) &&
-    String(pool.state || "").toLowerCase() === "running"
-  ).map((pool) => ({
-    poolId: pool.pool_id,
-    fee: pool.fee,
-    state: pool.state,
-    liquidity: pool.liquidity,
-    totalX: pool.total_x,
-    totalY: pool.total_y,
-  }));
-
-  const matchingClassicPools = classicResult.pools.filter((pool) =>
-    Array.isArray(pool.tokenIds) &&
-    pool.tokenIds.includes(INPUT_TOKEN) &&
-    pool.tokenIds.includes(OUTPUT_TOKEN)
-  ).map((pool) => ({
-    poolId: String(pool.id),
-    fee: pool.fee,
-    inputReserve: String(pool.supplies?.[INPUT_TOKEN] || "0"),
-    outputReserve: String(pool.supplies?.[OUTPUT_TOKEN] || "0"),
+  const poolChecks = await Promise.all(candidateIds.map(async ({pair,poolId}) => {
+    const contract = poolId.includes("usdt.fakes.testnet") ? REF_DCL_CONTRACT : REF_DCL_CONTRACT;
+    try {
+      const pool = await view(contract, "get_pool", { pool_id: poolId });
+      return {
+        pair,
+        poolId,
+        ok: !!pool,
+        pool: pool ? {
+          poolId: pool.pool_id || poolId,
+          tokenX: pool.token_x,
+          tokenY: pool.token_y,
+          fee: pool.fee,
+          state: pool.state,
+          liquidity: pool.liquidity,
+          totalX: pool.total_x,
+          totalY: pool.total_y,
+        } : null,
+        error: null,
+      };
+    } catch (error) {
+      return { pair, poolId, ok: false, pool: null, error: error instanceof Error ? error.message : "Pool lookup failed." };
+    }
   }));
 
   return Response.json({
@@ -387,18 +357,8 @@ export async function GET() {
     dclContract: REF_DCL_CONTRACT,
     metadataChecks,
     poolDiscovery: {
-      dcl: {
-        ok: dclResult.ok,
-        totalPools: dclResult.pools.length,
-        matchingPools: matchingDclPools,
-        error: dclResult.error,
-      },
-      classic: {
-        ok: classicResult.ok,
-        totalPools: classicResult.pools.length,
-        matchingPools: matchingClassicPools,
-        error: classicResult.error,
-      },
+      method: "targeted get_pool calls (avoids full list_pools gas limit)",
+      checks: poolChecks,
     },
     checkedAt: new Date().toISOString(),
   }, { headers: { "Cache-Control": "no-store" } });
