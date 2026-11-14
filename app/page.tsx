@@ -247,31 +247,70 @@ export default function Home() {
           <span>MERIDIAN<span className="brand-light"> DCA</span></span>
         </a>
         <nav className="topnav">
-          <a href="#planner">Planner</a>
-          <a href="#plans">My plans</a>
+          <a href="#markets">Assets</a>
+          <a href="#planner">DCA planner</a>
+          <a href="#plans">My strategies</a>
           <a href="#how-it-works">How it works</a>
         </nav>
-        <div className="mode-pill"><span className="pulse-dot" /> DRY-RUN MODE</div>
+        <div className="mode-pill"><span className="pulse-dot" /> DRY RUN · NO FUNDS MOVED</div>
       </header>
 
       <section className="hero">
         <div className="hero-copy">
           <div className="eyebrow"><span className="eyebrow-line" /> CROSS-CHAIN INVESTING, MADE STEADY</div>
-          <h1>Build your position.<br /><em>One interval at a time.</em></h1>
-          <p>Plan recurring crypto purchases across supported chains. Preview the route with live NEAR Intents quotes before committing any funds.</p>
+          <h1>Make every interval<br /><em>count across chains.</em></h1>
+          <p>Build a steady crypto-buying strategy across supported networks. Preview each route with a live NEAR Intents quote before any funds move.</p>
           <div className="hero-actions">
             <a className="primary-link" href="#planner">Create an investment plan <span>↗</span></a>
             <span className="hero-note"><span className="shield">◇</span> No transfers in this demo</span>
           </div>
         </div>
-        <div className="hero-art" aria-hidden="true">
-          <div className="orbit orbit-one" />
-          <div className="orbit orbit-two" />
-          <div className="orbit orbit-three" />
-          <div className="orbit-core"><span>m</span></div>
-          <div className="orbit-label label-a">ROUTING<br /><b>1CLICK API</b></div>
-          <div className="orbit-label label-b">STRATEGY<br /><b>RECURRING</b></div>
-          <div className="orbit-label label-c">CONTROL<br /><b>YOU DECIDE</b></div>
+        <div className="hero-art">
+          <div className="route-visual">
+            <div className="route-visual-top">
+              <span>MERIDIAN / ROUTE MONITOR</span>
+              <span className="visual-status"><i /> DRY RUN</span>
+            </div>
+            <div className="route-visual-main">
+              <div>
+                <span className="visual-kicker">YOUR NEXT ROUTE</span>
+                <div className="visual-pair">
+                  <span>{origin?.symbol || "USDC"}</span>
+                  <b>↗</b>
+                  <span>{destination?.symbol || "BTC"}</span>
+                </div>
+                <p>{origin?.blockchain || "Source network"} <i>to</i> {destination?.blockchain || "Destination network"}</p>
+              </div>
+              <div className="route-visual-badge">1CLICK<br /><strong>API</strong></div>
+            </div>
+            <div className="route-visual-flow" aria-hidden="true">
+              <div className="flow-node node-left"><span /></div>
+              <div className="flow-track"><span /><span /><span /></div>
+              <div className="flow-node node-right"><span /></div>
+            </div>
+            <div className="route-visual-bottom">
+              <div><span>ROUTING LAYER</span><strong>NEAR Intents</strong></div>
+              <div><span>EXECUTION</span><strong>Not enabled</strong></div>
+            </div>
+            <div className="visual-footnote">Illustrative route view · actual output comes from each quote</div>
+          </div>
+        </div>
+      </section>
+
+      <section className="asset-strip" id="markets">
+        <div className="asset-strip-heading">
+          <strong>SUPPORTED ASSET UNIVERSE</strong>
+          <span>{assetsLoading ? "SYNCING WITH NEAR INTENTS…" : assets.length.toLocaleString() + " ASSETS · 1CLICK API"}</span>
+        </div>
+        <div className="asset-ticker">
+          {assets.slice(0, 12).map((asset) => (
+            <div className="asset-ticker-item" key={asset.assetId}>
+              <span className="ticker-symbol">{asset.symbol.slice(0, 1)}</span>
+              <strong>{asset.symbol}</strong>
+              <small>{asset.blockchain}</small>
+            </div>
+          ))}
+          {!assetsLoading && !assets.length && <span className="ticker-empty">Asset feed is temporarily unavailable. Retry the asset list below.</span>}
         </div>
       </section>
 
@@ -366,7 +405,7 @@ export default function Home() {
           <div className="quote-card">
             <div className="card-heading">
               <div><span className="step-number">02</span><h3>Quote preview</h3></div>
-              <span className="live-tag"><span className="pulse-dot" /> LIVE DATA</span>
+              <span className="live-tag"><span className="pulse-dot" /> NEAR INTENTS
             </div>
             {!quoteResult && !quoteLoading && (
               <div className="empty-quote">
