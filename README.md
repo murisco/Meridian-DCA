@@ -106,6 +106,24 @@ The connected NEAR wallet remains testnet-only. Its menu reads the native NEAR b
 **Important:** mainnet remains preview-only. Testnet execution is available only for Tidepool NEAR tokens and requires explicit wallet approval.
 
 
+## Ref Finance testnet first-buy route
+
+MERIDIAN includes a separate optional route intended to use the existing testnet wrapped NEAR token:
+
+- Input: `wrap.testnet` wNEAR (24 decimals).
+- Output: `wbtc.fakes.testnet` WBTC (8 decimals), which is the WBTC entry in Ref Finance's testnet SDK token list.
+- Ref Finance testnet DCL contract: `dclv2.ref-dev.testnet`.
+- The app reads live pool information and requests quotes directly from the NEAR testnet RPC. It displays a swap option only when a running matching pool returns a positive quote.
+- The first test is capped at 0.02 wNEAR. The quote applies the selected slippage tolerance and computes minimum WBTC output using integer base units.
+- If the wallet has not registered to receive WBTC, the app first requests the token's exact `storage_balance_bounds.min` deposit, then requests a separate wallet approval for the swap.
+- After submission, MERIDIAN verifies that the wallet's WBTC balance increased before showing success.
+
+This is an independent Ref Finance NEAR testnet DEX route, not a NEAR Intents route and not Tidepool. Testnet tokens have no monetary value. Do not send real assets to testnet contracts.
+
+## DCA scheduling status
+
+Saved daily, weekly or monthly plans are still local browser records. They do not trigger future transactions when the user is offline. The first-buy swap is user-approved. Automatic recurring purchases require a separate user-authorized mechanism, such as a scoped smart-contract vault or delegated key with strict amount/frequency limits and appropriate security review. MERIDIAN does not store wallet private keys.
+
 ## Native NEAR testnet wrapping
 
 The connected wallet panel includes an opt-in **Wrap 0.02 NEAR → wNEAR** action for the NEAR testnet wrapper contract `wrap.testnet`.
