@@ -492,10 +492,10 @@ export default function Home() {
     }
     const newPlan: Plan = {
       id: window.crypto?.randomUUID?.() || String(Date.now()),
-      sourceAssetId: origin.assetId,
-      destinationAssetId: destination.assetId,
-      sourceSymbol: origin.symbol,
-      destinationSymbol: destination.symbol,
+      sourceAssetId: network === "testnet" && liveSwapStatus === "SUCCESS" ? "wrap.testnet" : origin.assetId,
+      destinationAssetId: network === "testnet" && liveSwapStatus === "SUCCESS" ? "wbtc.fakes.testnet" : destination.assetId,
+      sourceSymbol: network === "testnet" && liveSwapStatus === "SUCCESS" ? "wNEAR" : origin.symbol,
+      destinationSymbol: network === "testnet" && liveSwapStatus === "SUCCESS" ? "WBTC" : destination.symbol,
       sourceChain: origin.blockchain,
       destinationChain: destination.blockchain,
       amount,
@@ -530,6 +530,34 @@ export default function Home() {
     setCheckingPlanId(plan.id);
 
     try {
+      if (plan.network === "testnet" && plan.sourceAssetId === "wrap.testnet" && plan.destinationAssetId === "wbtc.fakes.testnet") {
+        const response = await fetch("/api/ref/quote", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            accountId: plan.recipient,
+            amount: plan.amount,
+            slippageBps: plan.slippage,
+          }),
+        });
+        const data = await response.json();
+        if (!response.ok || data.available !== true) throw new Error(data.error || "Ref Finance quote check failed.");
+        const quote = data.bestQuote;
+        const assessment = assessSlippage(quote.amountOut, quote.minimumOut, plan.slippage);
+        setPlans((current) => current.map((item) => item.id === plan.id ? {
+          ...item,
+          lastDryRun: {
+            checkedAt: new Date().toISOString(),
+            status: assessment.status,
+            message: "Ref Finance testnet · " + assessment.message,
+            output: quote.amountOutFormatted + " WBTC",
+            minimumOutput: formatBaseUnits(quote.minimumOut, 8) + " WBTC",
+            quoteReference: quote.poolId,
+          },
+        } : item));
+        return;
+      }
+
       const response = await fetch("/api/quote", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -605,7 +633,7 @@ export default function Home() {
         </nav>
         <div className="topbar-actions">
           <WalletConnect />
-          <div className="mode-pill"><span className="pulse-dot" /> DRY RUN · NO FUNDS MOVED</div>
+          <div className="mode-pill"><span className="pulse-dot" /> {network === "testnet" ? "TESTNET · WALLET-APPROVED SWAPS" : "MAINNET · DRY RUN ONLY"}</div>
         </div>
       </header>
 
@@ -644,7 +672,7 @@ export default function Home() {
             </div>
             <div className="route-visual-bottom">
               <div><span>ROUTING LAYER</span><strong>NEAR Intents</strong></div>
-              <div><span>EXECUTION</span><strong>Not enabled</strong></div>
+              <div><span>EXECUTION</span><strong>Wallet approval required</strong></div>
             </div>
             <div className="visual-footnote">Illustrative route view · actual output comes from each quote</div>
           </div>
@@ -672,7 +700,7 @@ export default function Home() {
         <div><span className="metric-label">ROUTING LAYER</span><strong>NEAR Intents</strong></div>
         <div><span className="metric-label">ASSET UNIVERSE</span><strong>{assetsLoading ? "Loading…" : assets.length.toLocaleString() + " assets"}</strong></div>
         <div><span className="metric-label">QUOTE MODE</span><strong>Real-time preview</strong></div>
-        <div><span className="metric-label">EXECUTION</span><strong className="muted-value">Not enabled</strong></div>
+        <div><span className="metric-label">EXECUTION</span><strong>Testnet · wallet approved</strong></div>
       </section>
 
       <section className="section-heading" id="planner">
@@ -859,7 +887,7 @@ export default function Home() {
                 <div className="plan-pair-icon">{plan.sourceSymbol.slice(0, 1)}<span>↗</span>{plan.destinationSymbol.slice(0, 1)}</div>
                 <div className="plan-main">
                   <strong>{plan.sourceSymbol} <span>→</span> {plan.destinationSymbol}</strong>
-                  <small>{plan.sourceChain.toUpperCase()} to {plan.destinationChain.toUpperCase()} · {plan.frequency.toLowerCase()} · {(plan.network || "mainnet") === "testnet" ? "TIDEPOOL TESTNET" : "MAINNET"}</small>
+                  <small>{plan.sourceChain.toUpperCase()} to {plan.destinationChain.toUpperCase()} · {plan.frequency.toLowerCase()} · {plan.sourceAssetId === "wrap.testnet" ? "REF FINANCE TESTNET" : (plan.network || "mainnet") === "testnet" ? "TIDEPOOL TESTNET" : "MAINNET"}</small>
                   {plan.lastDryRun && <small className={"plan-check-result " + plan.lastDryRun.status.toLowerCase()}>{plan.lastDryRun.status}: {plan.lastDryRun.message}</small>}
                   {plan.lastDryRun?.output && <small className="plan-check-detail">Expected {plan.lastDryRun.output}{plan.lastDryRun.minimumOutput ? " · Minimum " + plan.lastDryRun.minimumOutput : ""}</small>}
                 </div>
