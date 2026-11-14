@@ -3,7 +3,7 @@ const REF_DCL_CONTRACT = "dclv2.ref-dev.testnet";
 const REF_EXCHANGE_CONTRACT = "ref-finance-101.testnet";
 const REF_TESTNET_INDEXER = "https://testnet-indexer.ref-finance.com";
 const INPUT_TOKEN = "wrap.testnet";
-const OUTPUT_TOKEN = "wbtc.fakes.testnet";
+const OUTPUT_TOKEN = "usdt.fakes.testnet";
 const ONE = 10n ** 24n;
 
 type RpcResponse = {
@@ -104,11 +104,11 @@ export async function POST(request: Request) {
       view(OUTPUT_TOKEN, "storage_balance_bounds"),
     ]);
 
-    if (inputMeta.decimals !== 24 || outputMeta.decimals !== 8) {
-      throw new Error("Ref Finance testnet token metadata did not match the expected wNEAR/WBTC decimals.");
+    if (inputMeta.decimals !== 24 || outputMeta.decimals !== 6) {
+      throw new Error("Ref Finance testnet token metadata did not match the expected wNEAR/USDT.e decimals.");
     }
     if (typeof outputBounds?.min !== "string" || !/^\d+$/.test(outputBounds.min)) {
-      throw new Error("Ref Finance did not return a valid WBTC storage-registration minimum.");
+      throw new Error("Ref Finance did not return a valid USDT.e storage-registration minimum.");
     }
 
     // Check the classic Ref exchange indexer first, following the official
@@ -149,7 +149,7 @@ export async function POST(request: Request) {
             state: "Quote available",
             amountOut: amountOut.toString(),
             minimumOut: minimumOut.toString(),
-            amountOutFormatted: formatBaseUnits(amountOut.toString(), 8),
+            amountOutFormatted: formatBaseUnits(amountOut.toString(), outputMeta.decimals),
             inputReserve: inputReserve.toString(),
             outputReserve: outputReserve.toString(),
           };
@@ -237,7 +237,7 @@ export async function POST(request: Request) {
             totalY: String(pool.total_y || "0"),
             amountOut: String(quote.amount),
             minimumOut,
-            amountOutFormatted: formatBaseUnits(String(quote.amount), 8),
+            amountOutFormatted: formatBaseUnits(String(quote.amount), outputMeta.decimals),
           },
           error: null,
         };
@@ -254,7 +254,7 @@ export async function POST(request: Request) {
     if (!validQuotes.length) {
       return Response.json({
         available: false,
-        error: "No running Ref Finance DCL pool returned a usable wNEAR/WBTC quote. No transaction was sent.",
+        error: "No running Ref Finance DCL pool returned a usable wNEAR/USDT.e quote. No transaction was sent.",
         discovery: {
           method: "get_pool by exact pool ID",
           attemptedPoolIds: candidatePoolChecks.map((item) => item.poolId),
@@ -300,9 +300,9 @@ export async function POST(request: Request) {
 export async function GET() {
   const metadataChecks = await Promise.all([
     { step: "wNEAR metadata", contract: INPUT_TOKEN, method: "ft_metadata" },
-    { step: "WBTC metadata", contract: OUTPUT_TOKEN, method: "ft_metadata" },
-    { step: "USDT testnet metadata", contract: "usdt.fakes.testnet", method: "ft_metadata" },
-    { step: "WBTC storage bounds", contract: OUTPUT_TOKEN, method: "storage_balance_bounds" },
+    { step: "USDT.e metadata", contract: OUTPUT_TOKEN, method: "ft_metadata" },
+    
+    { step: "USDT.e storage bounds", contract: OUTPUT_TOKEN, method: "storage_balance_bounds" },
   ].map(async (item) => {
     try {
       return { step: item.step, ok: true, data: await view(item.contract, item.method) };
@@ -316,12 +316,8 @@ export async function GET() {
   }));
 
   const candidateIds = [
-    ...[100, 400, 2000, 10000].map((fee) => ({
-      pair: "wrap.testnet / wbtc.fakes.testnet",
-      poolId: ["wrap.testnet", "wbtc.fakes.testnet"].sort().join("|") + "|" + fee,
-    })),
     {
-      pair: "usdt.fakes.testnet / wrap.testnet (Ref SDK documented testnet example)",
+      pair: "wrap.testnet / usdt.fakes.testnet",
       poolId: "usdt.fakes.testnet|wrap.testnet|2000",
     },
   ];
