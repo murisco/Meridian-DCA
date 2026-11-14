@@ -168,6 +168,9 @@ export default function WalletConnect() {
             !/^\d+$/.test(payload.outputStorageMinimum)) {
           throw new Error("The swap quote contained an invalid token amount.");
         }
+        if (BigInt(payload.amountIn) > 20000000000000000000000n) {
+          throw new Error("This first test swap is capped at 0.02 wNEAR.");
+        }
         if (payload.inputRegistered !== true || balance?.wrapRegistered !== true) {
           throw new Error("Your wallet is not registered for wrap.testnet wNEAR. Refresh the wallet and try again.");
         }
