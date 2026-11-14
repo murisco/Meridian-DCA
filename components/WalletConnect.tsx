@@ -20,7 +20,7 @@ const STORAGE_DEPOSIT_RAW = "1250000000000000000000"; // 0.00125 NEAR
 
 function parseNearToYocto(value: string): bigint {
   const amount = value.trim();
-  if (!/^(?:0|[1-9]\\d*)(?:\\.\\d{1,24})?$/.test(amount)) {
+  if (!/^(?:0|[1-9]\d*)(?:\.\d{1,24})?$/.test(amount)) {
     throw new Error("Enter a valid NEAR amount with up to 24 decimal places.");
   }
   const [whole, fraction = ""] = amount.split(".");
