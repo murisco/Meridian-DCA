@@ -14,6 +14,12 @@ type RpcResponse = {
   error?: { message?: string };
 };
 
+function decodeJsonResult(result: number[] | undefined): unknown {
+  if (!Array.isArray(result)) return null;
+  const encoded = Buffer.from(result).toString("utf8");
+  try { return JSON.parse(encoded); } catch { return null; }
+}
+
 function formatUnits(raw: string, decimals: number, maxFraction = 6) {
   if (!/^\d+$/.test(raw)) return "0";
   const value = BigInt(raw);
@@ -60,7 +66,8 @@ export async function GET(request: Request) {
       return Response.json({ error: "The testnet account was not found or has no readable balance." }, { status: 404 });
     }
 
-    const tokenBalances = await Promise.all(TEST_TOKENS.map(async (token) => {
+    const [tokenBalances, wrappedNearResult, wrapStorageResult] = await Promise.all([
+      Promise.all(TEST_TOKENS.map(async (token) => {
       try {
         const argsBase64 = Buffer.from(JSON.stringify({ account_id: accountId }), "utf8").toString("base64");
         const result = await rpcQuery({
@@ -87,12 +94,51 @@ export async function GET(request: Request) {
       } catch {
         return null;
       }
-    }));
+      })),
+      rpcQuery({
+        jsonrpc: "2.0",
+        id: "meridian-wnear-balance",
+        method: "query",
+        params: {
+          request_type: "call_function",
+          finality: "final",
+          account_id: "wrap.testnet",
+          method_name: "ft_balance_of",
+          args_base64: Buffer.from(JSON.stringify({ account_id: accountId }), "utf8").toString("base64"),
+        },
+      }),
+      rpcQuery({
+        jsonrpc: "2.0",
+        id: "meridian-wnear-storage",
+        method: "query",
+        params: {
+          request_type: "call_function",
+          finality: "final",
+          account_id: "wrap.testnet",
+          method_name: "storage_balance_of",
+          args_base64: Buffer.from(JSON.stringify({ account_id: accountId }), "utf8").toString("base64"),
+        },
+      }),
+    ]);
+
+    const wrapBalanceRaw = decodeJsonResult(wrappedNearResult.result?.result);
+    if (typeof wrapBalanceRaw !== "string" || !/^\\d+$/.test(wrapBalanceRaw)) {
+      throw new Error("Could not verify the testnet wNEAR balance.");
+    }
+    const wrapStorage = decodeJsonResult(wrapStorageResult.result?.result);
+    const wrapRegistered = Boolean(wrapStorage && typeof wrapStorage === "object" && "total" in wrapStorage);
 
     return Response.json({
       network: "testnet",
       accountId,
       near: formatUnits(account.result.amount, 24, 4),
+      nearRaw: account.result.amount,
+      wrapNear: {
+        balance: formatUnits(wrapBalanceRaw, 24, 6),
+        rawBalance: wrapBalanceRaw,
+        contractId: "wrap.testnet",
+      },
+      wrapRegistered,
       tokens: tokenBalances.filter((token): token is NonNullable<typeof token> => token !== null),
       updatedAt: new Date().toISOString(),
       source: "NEAR testnet RPC and Tidepool test-token contracts",
