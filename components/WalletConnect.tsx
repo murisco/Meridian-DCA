@@ -328,7 +328,7 @@ export default function WalletConnect() {
         if (!payload.recipient || !payload.destinationAsset.blockchain) {
           throw new Error("A destination address for the selected destination network is required.");
         }
-        if (!/^[0-9a-f]{64}$/i.test(depositAddress) || !/^\\d+$/.test(amountIn)) {
+        if (!/^[0-9a-f]{64}$/i.test(depositAddress) || !/^\d+$/.test(amountIn)) {
           throw new Error("The live quote is missing a valid deposit address or exact input amount.");
         }
         if (payload.originAsset.blockchain !== "near" || !originContract ||
