@@ -2,7 +2,6 @@ const RPC_URL = "https://rpc.testnet.fastnear.com";
 const REF_DCL_CONTRACT = "dclv2.ref-dev.testnet";
 const INPUT_TOKEN = "wrap.testnet";
 const OUTPUT_TOKEN = "wbtc.fakes.testnet";
-const FEES = [100, 400, 2000, 10000];
 const ONE = 10n ** 24n;
 
 type RpcResponse = { result?: { result?: number[] }; error?: { message?: string } };
@@ -28,13 +27,25 @@ async function view(contractId: string, methodName: string, args: Record<string,
   return JSON.parse(Buffer.from(data.result.result).toString("utf8")) as any;
 }
 
+function formatBaseUnits(raw: string, decimals: number, maxFraction = 8) {
+  const value = BigInt(raw);
+  const scale = 10n ** BigInt(decimals);
+  const whole = value / scale;
+  const fraction = value % scale;
+  if (fraction === 0n) return whole.toString();
+  return whole.toString() + "." + fraction.toString().padStart(decimals, "0").slice(0, maxFraction).replace(/0+$/, "");
+}
+
 function parsePositiveAmount(value: unknown) {
   const amount = typeof value === "string" ? value.trim() : "";
-  if (!/^(?:0|[1-9]\d*)(?:\.\d{1,24})?$/.test(amount) || Number(amount) <= 0) {
+  if (!/^(?:0|[1-9]\d*)(?:\.\d{1,24})?$/.test(amount)) {
     throw new Error("Enter a valid wNEAR amount with up to 24 decimal places.");
   }
   const [whole, fraction = ""] = amount.split(".");
-  return (BigInt(whole) * ONE + BigInt((fraction + "0".repeat(24)).slice(0, 24))).toString();
+  const raw = BigInt(whole) * ONE + BigInt((fraction + "0".repeat(24)).slice(0, 24));
+  if (raw <= 0n) throw new Error("Amount must be greater than zero.");
+  if (raw > 20000000000000000000000n) throw new Error("For this first test, the maximum swap size is 0.02 wNEAR.");
+  return raw.toString();
 }
 
 export async function POST(request: Request) {
@@ -93,7 +104,7 @@ export async function POST(request: Request) {
           totalY: pool.total_y || "0",
           amountOut: String(quote.amount),
           minimumOut,
-          amountOutFormatted: (Number(quote.amount) / 1e8).toFixed(8).replace(/0+$/, "").replace(/\.$/, ""),
+          amountOutFormatted: formatBaseUnits(String(quote.amount), 8),
         };
       } catch { return null; }
     }));
