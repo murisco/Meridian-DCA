@@ -631,7 +631,7 @@ export default function WalletConnect() {
                         <small className="wallet-balance-muted">USDT.e account {balance.refUsdt.registered ? "registered" : "not registered yet"} · registration is required before receiving USDT.e.</small>
                       </>
                     ) : <small className="wallet-balance-muted">Ref Finance USDT.e balance is not available right now.</small>}
-                    {balance.wrapNear.balance !== "0" && <small className="wallet-balance-muted">This is wrapper wNEAR, not Tidepool wNEAR. MERIDIAN's test swap uses the separate Tidepool token below.</small>}
+                    {balance.wrapNear.balance !== "0" && <small className="wallet-balance-muted">This is wrapper wNEAR for the Ref Finance first-buy route. It is different from Tidepool's separate wNEAR test asset.</small>}
                     {balance.tokens.map((token) => (
                       <div className="wallet-balance-row" key={token.contractId}><span>{token.symbol} · Tidepool</span><strong>{token.balance}</strong></div>
                     ))}
