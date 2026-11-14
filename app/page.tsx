@@ -684,7 +684,7 @@ export default function Home() {
         <div className="planner-card">
           <div className="card-heading">
             <div><span className="step-number">01</span><h3>Investment details</h3></div>
-            <span className="card-caption">PLAN YOUR NEXT BUY</span>
+            <span className="card-caption">BUY NOW · THEN SET YOUR PLAN</span>
           </div>
 
           <div className="network-switcher">
@@ -722,17 +722,10 @@ export default function Home() {
               </div>
             </div>
 
-            <div className="field-row">
-              <div className="field amount-field">
-                <label htmlFor="amount">AMOUNT PER BUY</label>
-                <div className="input-suffix"><input id="amount" inputMode="decimal" value={amount} onChange={(event) => { setAmount(event.target.value); setQuoteResult(null); setRefRouteQuote(null); setRefRouteError(""); setLiveSwapStatus(""); setLiveSwapMessage(""); }} placeholder="e.g. 0.01" /><span>{origin?.symbol || "TOKEN"}</span></div>
-              </div>
-              <div className="field">
-                <label htmlFor="frequency">REPEAT EVERY</label>
-                <select id="frequency" value={frequency} onChange={(event) => setFrequency(event.target.value as Plan["frequency"])}>
-                  <option>Daily</option><option>Weekly</option><option>Monthly</option>
-                </select>
-              </div>
+            <div className="field amount-field">
+              <label htmlFor="amount">AMOUNT TO BUY NOW / PER BUY</label>
+              <div className="input-suffix"><input id="amount" inputMode="decimal" value={amount} onChange={(event) => { setAmount(event.target.value); setQuoteResult(null); setRefRouteQuote(null); setRefRouteError(""); setLiveSwapStatus(""); setLiveSwapMessage(""); }} placeholder="Enter amount, e.g. 0.01" /><span>{origin?.symbol || "TOKEN"}</span></div>
+              <span className="field-hint">For the first Ref Finance testnet buy, enter up to 0.02 wNEAR.</span>
             </div>
 
             <div className="field">
@@ -783,14 +776,26 @@ export default function Home() {
             </div>
             )}
 
+            <div className="recurring-plan-field">
+              <div className="ref-direct-heading"><strong>SET UP YOUR RECURRING PLAN</strong><span>AFTER FIRST BUY</span></div>
+              <div className="field">
+                <label htmlFor="frequency">REPEAT EVERY</label>
+                <select id="frequency" value={frequency} onChange={(event) => setFrequency(event.target.value as Plan["frequency"])}>
+                  <option>Daily</option><option>Weekly</option><option>Monthly</option>
+                </select>
+                <span className="field-hint">This schedule is saved after your immediate purchase. It does not trigger automatic swaps yet.</span>
+              </div>
+            </div>
+
             {quoteError && <div className="alert error">{quoteError}</div>}
 
             <div className="form-actions">
               <button className="button button-primary" type="submit" disabled={quoteLoading || assetsLoading || !origin || !destination || !amount.trim()}>
                 {quoteLoading ? <><span className="spinner" /> Fetching live quote…</> : <>Preview live quote <span>↗</span></>}
               </button>
-              <button className="button button-secondary" type="button" onClick={createPlan} disabled={assetsLoading || !origin || !destination}>Save recurring plan</button>
+              <button className="button button-secondary" type="button" onClick={createPlan} disabled={assetsLoading || !origin || !destination || !amount.trim() || (network === "testnet" && liveSwapStatus !== "SUCCESS")}>Save recurring plan</button>
             </div>
+            {network === "testnet" && liveSwapStatus !== "SUCCESS" && <p className="form-footnote">Complete your first wNEAR → WBTC purchase above to unlock saving the recurring plan.</p>}
             {planSaveMessage && <div className="plan-save-success" role="status" aria-live="polite"><strong>✓ Plan saved successfully</strong><span>{planSaveMessage}</span><a href="#plans">View saved plan ↓</a></div>}
             {storageWarning && <div className="alert error" role="alert">{storageWarning}</div>}
             <p className="form-footnote"><span>ⓘ</span> Saving a plan stores a reminder in this browser. It does not schedule or execute a blockchain transaction.</p>
