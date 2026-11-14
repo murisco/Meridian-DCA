@@ -3,6 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 import type { NearConnector as NearConnectorType } from "@hot-labs/near-connect";
 
+type WalletBalance = {
+  near: string;
+  tokens: { symbol: string; balance: string; decimals: number }[];
+  updatedAt: string;
+};
+
 export default function WalletConnect() {
   const connectorRef = useRef<NearConnectorType | null>(null);
   const [accountId, setAccountId] = useState("");
@@ -10,14 +16,16 @@ export default function WalletConnect() {
   const [busy, setBusy] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [error, setError] = useState("");
+  const [balance, setBalance] = useState<WalletBalance | null>(null);
+  const [balanceLoading, setBalanceLoading] = useState(false);
+  const [balanceError, setBalanceError] = useState("");
+  const [balanceRefresh, setBalanceRefresh] = useState(0);
 
   useEffect(() => {
     let active = true;
     let connector: NearConnectorType | null = null;
 
     async function initialise() {
-      // Keep the connector browser-only. It uses browser APIs and must not
-      // be constructed during Next.js server rendering.
       const { NearConnector } = await import("@hot-labs/near-connect");
       const instance = new NearConnector({
         network: "testnet",
@@ -36,11 +44,11 @@ export default function WalletConnect() {
       instance.on("wallet:signOut", () => {
         if (active) {
           setAccountId("");
+          setBalance(null);
           setMenuOpen(false);
         }
       });
 
-      // Restore an existing browser wallet session when the connector has one.
       try {
         const wallet = await instance.wallet();
         const accounts = await wallet.getAccounts();
@@ -65,6 +73,37 @@ export default function WalletConnect() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!accountId) {
+      setBalance(null);
+      setBalanceError("");
+      return;
+    }
+
+    let active = true;
+    setBalanceLoading(true);
+    setBalanceError("");
+    fetch("/api/wallet/balance?accountId=" + encodeURIComponent(accountId), { cache: "no-store" })
+      .then(async (response) => {
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Unable to load wallet balance.");
+        return data as WalletBalance;
+      })
+      .then((data) => {
+        if (active) setBalance(data);
+      })
+      .catch((cause: unknown) => {
+        if (active) setBalanceError(cause instanceof Error ? cause.message : "Unable to load wallet balance.");
+      })
+      .finally(() => {
+        if (active) setBalanceLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [accountId, balanceRefresh]);
+
   async function connect() {
     if (busy) return;
     const connector = connectorRef.current;
@@ -77,9 +116,6 @@ export default function WalletConnect() {
     setError("");
     try {
       await connector.connect();
-
-      // NEAR Connect emits wallet:signIn when the user approves the account.
-      // Read the selected account from the connected wallet as a fallback.
       const wallet = await connector.wallet();
       const accounts = await wallet.getAccounts();
       const account = accounts[0]?.accountId ?? "";
@@ -107,6 +143,7 @@ export default function WalletConnect() {
     try {
       await connector.disconnect();
       setAccountId("");
+      setBalance(null);
       setMenuOpen(false);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Unable to disconnect this wallet.");
@@ -139,6 +176,32 @@ export default function WalletConnect() {
             <div className="wallet-connect-menu">
               <span className="wallet-menu-label">CONNECTED TESTNET ACCOUNT</span>
               <strong>{accountId}</strong>
+              <div className="wallet-balance-panel">
+                <div className="wallet-balance-heading">
+                  <span>LIVE TESTNET BALANCE</span>
+                  <button type="button" onClick={() => setBalanceRefresh((value) => value + 1)} disabled={balanceLoading}>
+                    {balanceLoading ? "Updating…" : "Refresh"}
+                  </button>
+                </div>
+                {balanceLoading && <small className="wallet-balance-muted">Reading balances from NEAR testnet…</small>}
+                {balanceError && <small className="wallet-balance-error">{balanceError}</small>}
+                {balance && (
+                  <>
+                    <div className="wallet-balance-row"><span>NEAR</span><strong>{balance.near}</strong></div>
+                    {balance.tokens.map((token) => (
+                      <div className="wallet-balance-row" key={token.symbol}><span>{token.symbol}</span><strong>{token.balance}</strong></div>
+                    ))}
+                    {!balance.tokens.length && (
+                      <small className="wallet-balance-muted">No Tidepool test tokens found in this wallet yet.</small>
+                    )}
+                    <small className="wallet-balance-time">Updated {new Date(balance.updatedAt).toLocaleTimeString()}</small>
+                  </>
+                )}
+                {!balanceLoading && !balance && !balanceError && <small className="wallet-balance-muted">Balance has not loaded yet.</small>}
+                <a className="wallet-faucet-link" href="https://app.usetidepool.tech/faucet" target="_blank" rel="noreferrer">
+                  Get free test tokens ↗
+                </a>
+              </div>
               <button type="button" onClick={disconnect} disabled={busy}>
                 {busy ? "Disconnecting…" : "Disconnect wallet"}
               </button>
