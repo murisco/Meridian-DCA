@@ -578,3 +578,15 @@ h1 em,h2 em{color:#68e3f1}
 .network-switcher label{font:500 8px 'DM Mono',monospace;letter-spacing:.1em;color:#80dbe7}
 .network-switcher select{width:100%;height:39px;padding:0 10px;border:1px solid rgba(123,164,187,.28);border-radius:6px;background:#111e2c;color:#edf7fb;font:600 10px 'DM Mono',monospace}
 .network-switcher span{font-size:9px;line-height:1.5;color:#91aaba}
+
+
+/* Explicitly approved native testnet NEAR wrapping */
+.wallet-wrap-action{display:flex;flex-direction:column;gap:8px;padding:10px;border:1px solid rgba(90,224,242,.16);border-radius:7px;background:rgba(90,224,242,.035)}
+.wallet-wrap-note{font-size:9px;line-height:1.55;color:#9db4c2}
+.wallet-wrap-note strong{color:#e9f8fb}
+.wallet-wrap-button{width:100%;padding:10px 11px;border:1px solid rgba(107,232,197,.35);border-radius:6px;background:rgba(107,232,197,.1);color:#a4eadb;font:700 9px 'DM Mono',monospace;cursor:pointer}
+.wallet-wrap-button:hover:not(:disabled){background:rgba(107,232,197,.17)}
+.wallet-wrap-button:disabled{opacity:.5;cursor:wait}
+.wallet-wrap-success,.wallet-wrap-error{font-size:9px;line-height:1.55}
+.wallet-wrap-success{color:#8de7cf}
+.wallet-wrap-error{color:#ffaaaa}
