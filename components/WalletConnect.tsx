@@ -443,8 +443,9 @@ export default function WalletConnect() {
                   <>
                     <div className="wallet-balance-row"><span>NEAR</span><strong>{balance.near}</strong></div>
                     <div className="wallet-balance-row"><span>wNEAR · wrap.testnet</span><strong>{balance.wrapNear.balance}</strong></div>
+                    {balance.wrapNear.balance !== "0" && <small className="wallet-balance-muted">This is wrapper wNEAR, not Tidepool wNEAR. MERIDIAN's test swap uses the separate Tidepool token below.</small>}
                     {balance.tokens.map((token) => (
-                      <div className="wallet-balance-row" key={token.symbol}><span>{token.symbol}</span><strong>{token.balance}</strong></div>
+                      <div className="wallet-balance-row" key={token.contractId}><span>{token.symbol} · Tidepool</span><strong>{token.balance}</strong></div>
                     ))}
                     {!balance.tokens.length && (
                       <small className="wallet-balance-muted">No Tidepool test tokens found in this wallet yet.</small>
