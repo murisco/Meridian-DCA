@@ -1,10 +1,18 @@
-const RPC_URL = "https://rpc.testnet.fastnear.com";
+const RPC_URL = "https://rpc.testnet.near.org";
 const REF_DCL_CONTRACT = "dclv2.ref-dev.testnet";
 const INPUT_TOKEN = "wrap.testnet";
 const OUTPUT_TOKEN = "wbtc.fakes.testnet";
 const ONE = 10n ** 24n;
 
-type RpcResponse = { result?: { result?: number[] }; error?: { message?: string } };
+type RpcResponse = {
+  result?: {
+    result?: number[];
+    error?: string | { message?: string; name?: string };
+    logs?: string[];
+  };
+  error?: { message?: string; data?: unknown } | string;
+  id?: string | number;
+};
 
 async function view(contractId: string, methodName: string, args: Record<string, unknown> = {}) {
   const argsBase64 = Buffer.from(JSON.stringify(args), "utf8").toString("base64");
@@ -22,9 +30,31 @@ async function view(contractId: string, methodName: string, args: Record<string,
   });
   if (!response.ok) throw new Error("NEAR testnet RPC returned HTTP " + response.status);
   const data = await response.json() as RpcResponse;
-  if (data.error) throw new Error(data.error.message || "NEAR contract view call failed.");
-  if (!Array.isArray(data.result?.result)) throw new Error("NEAR contract returned an unreadable view response.");
-  return JSON.parse(Buffer.from(data.result.result).toString("utf8")) as any;
+  if (!response.ok) {
+    const detail = typeof data.error === "string" ? data.error : data.error?.message || "";
+    throw new Error("NEAR RPC HTTP " + response.status + " while reading " + contractId + "." + methodName + (detail ? ": " + detail : "."));
+  }
+  if (data.error) {
+    const detail = typeof data.error === "string" ? data.error : data.error.message || JSON.stringify(data.error.data || "");
+    throw new Error("NEAR RPC failed for " + contractId + "." + methodName + (detail ? ": " + detail : "."));
+  }
+  if (data.result?.error) {
+    const detail = typeof data.result.error === "string"
+      ? data.result.error
+      : data.result.error.message || JSON.stringify(data.result.error);
+    throw new Error("Contract view failed for " + contractId + "." + methodName + ": " + detail);
+  }
+  if (!Array.isArray(data.result?.result)) {
+    throw new Error("NEAR RPC response for " + contractId + "." + methodName + " did not include a result byte array. Response: " + JSON.stringify(data).slice(0, 500));
+  }
+  if (data.result.result.length === 0) {
+    throw new Error("NEAR contract " + contractId + "." + methodName + " returned an empty result.");
+  }
+  try {
+    return JSON.parse(Buffer.from(data.result.result).toString("utf8")) as any;
+  } catch {
+    throw new Error("NEAR contract " + contractId + "." + methodName + " returned invalid JSON.");
+  }
 }
 
 function formatBaseUnits(raw: string, decimals: number, maxFraction = 8) {
