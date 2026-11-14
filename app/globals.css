@@ -571,3 +571,10 @@ h1 em,h2 em{color:#68e3f1}
 .wallet-balance-muted,.wallet-balance-time{font-size:9px;line-height:1.5;color:#8fa7b7}
 .wallet-balance-error{font-size:9px;line-height:1.5;color:#ffaaaa}
 .wallet-faucet-link{align-self:flex-start;margin-top:2px;color:#8debf2;font:600 9px 'DM Mono',monospace;text-decoration:underline;text-underline-offset:3px}
+
+
+/* Quote environment selector */
+.network-switcher{display:flex;flex-direction:column;gap:7px;margin:2px 0 18px;padding:12px 13px;border:1px solid rgba(90,224,242,.18);border-radius:8px;background:rgba(90,224,242,.035)}
+.network-switcher label{font:500 8px 'DM Mono',monospace;letter-spacing:.1em;color:#80dbe7}
+.network-switcher select{width:100%;height:39px;padding:0 10px;border:1px solid rgba(123,164,187,.28);border-radius:6px;background:#111e2c;color:#edf7fb;font:600 10px 'DM Mono',monospace}
+.network-switcher span{font-size:9px;line-height:1.5;color:#91aaba}
