@@ -54,8 +54,8 @@ type SwapExecutionPayload = {
     correlationId?: string;
     quote?: { depositAddress?: string; amountIn?: string; deadline?: string };
   };
-  originAsset: { assetId: string; contractAddress: string; symbol: string };
-  destinationAsset: { assetId: string; contractAddress: string; symbol: string };
+  originAsset: { assetId: string; contractAddress: string; symbol: string; blockchain: string };
+  destinationAsset: { assetId: string; contractAddress?: string | null; symbol: string; blockchain: string };
   recipient: string;
   refundTo: string;
 };
@@ -319,31 +319,32 @@ export default function WalletConnect() {
       const amountIn = payload.liveQuote?.quote?.amountIn || "";
       const deadline = payload.liveQuote?.quote?.deadline || "";
       const originContract = payload.originAsset?.contractAddress || "";
-      const destinationContract = payload.destinationAsset?.contractAddress || "";
 
       try {
         if (!accountId || !connectorRef.current) throw new Error("Connect your NEAR testnet wallet before executing the swap.");
-        if (payload.recipient !== accountId || payload.refundTo !== accountId) {
-          throw new Error("The recipient and refund addresses must both match your connected wallet.");
+        if (payload.refundTo !== accountId) {
+          throw new Error("The refund address must match your connected NEAR wallet.");
+        }
+        if (!payload.recipient || !payload.destinationAsset.blockchain) {
+          throw new Error("A destination address for the selected destination network is required.");
         }
         if (!/^[0-9a-f]{64}$/i.test(depositAddress) || !/^\\d+$/.test(amountIn)) {
           throw new Error("The live quote is missing a valid deposit address or exact input amount.");
         }
-        if (!originContract || !destinationContract || payload.originAsset.assetId === payload.destinationAsset.assetId) {
-          throw new Error("The selected token contracts are not valid for this testnet swap.");
+        if (payload.originAsset.blockchain !== "near" || !originContract ||
+            payload.originAsset.assetId === payload.destinationAsset.assetId) {
+          throw new Error("Choose a supported NEAR testnet source token and a different destination asset.");
         }
         if (deadline && Date.parse(deadline) <= Date.now() + 15000) {
           throw new Error("This quote is expired or too close to expiry. Request a fresh quote.");
         }
         if (!balance) throw new Error("Wallet balances are not loaded. Refresh your wallet balance and try again.");
 
+        // Only the source asset must be held in the connected NEAR wallet.
+        // Tidepool pays the destination asset out on its selected chain.
         const source = balance.tokens.find((token) => token.contractId === originContract);
-        const destination = balance.tokens.find((token) => token.contractId === destinationContract);
         if (!source || BigInt(source.rawBalance) < BigInt(amountIn)) {
-          throw new Error("Your wallet does not have enough Tidepool " + payload.originAsset.symbol + ". The wNEAR on wrap.testnet is a different token. Claim Tidepool wallet-mode test tokens first.");
-        }
-        if (!destination) {
-          throw new Error("Your wallet is not yet registered for Tidepool " + payload.destinationAsset.symbol + ". Claim the Tidepool faucet in wallet mode so the destination token is registered before swapping.");
+          throw new Error("Your NEAR wallet does not have enough Tidepool " + payload.originAsset.symbol + ". Claim the selected source token from the Tidepool wallet-mode faucet first.");
         }
 
         const minimumReserve = 20000000000000000000000n; // keep at least 0.02 NEAR for gas
@@ -353,7 +354,7 @@ export default function WalletConnect() {
         }
 
         setSwapBusy(true);
-        publishSwapUpdate("AWAITING_WALLET", "Review the wallet request. It registers the Tidepool deposit account and transfers the exact quoted amount of " + payload.originAsset.symbol + " to the quote deposit address.");
+        publishSwapUpdate("AWAITING_WALLET", "Review the NEAR wallet request. It registers the Tidepool deposit account and deposits the exact quoted amount of " + payload.originAsset.symbol + ". Tidepool will route the payout to your selected " + payload.destinationAsset.blockchain.toUpperCase() + " destination.");
         const wallet = await connectorRef.current.wallet();
         const actions = [
           {
@@ -369,7 +370,7 @@ export default function WalletConnect() {
             type: "FunctionCall" as const,
             params: {
               methodName: "ft_transfer",
-              args: { receiver_id: depositAddress, amount: amountIn, memo: "MERIDIAN DCA first purchase" },
+              args: { receiver_id: depositAddress, amount: amountIn },
               gas: FUNCTION_CALL_GAS,
               deposit: "1",
             },
@@ -409,7 +410,7 @@ export default function WalletConnect() {
             statusData,
           });
           if (status === "SUCCESS") {
-            publishSwapUpdate("SUCCESS", "Swap confirmed by Tidepool. Your " + payload.destinationAsset.symbol + " payout has completed.", {
+            publishSwapUpdate("SUCCESS", "Tidepool confirmed the cross-chain payout: " + payload.destinationAsset.symbol + " on " + payload.destinationAsset.blockchain.toUpperCase() + ".", {
               txHash, depositAddress, correlationId: payload.liveQuote.correlationId, statusData,
             });
             setBalanceRefresh((value) => value + 1);
