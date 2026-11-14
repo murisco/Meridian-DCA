@@ -154,13 +154,10 @@ export default function WalletConnect() {
       try {
         if (!accountId || !connectorRef.current) throw new Error("Connect your NEAR testnet wallet before swapping.");
         if (payload.accountId !== accountId) throw new Error("The route account does not match the connected wallet.");
-        if (!/^[0-9a-f]{64}$/i.test(payload.poolId.replaceAll("|", "").replace(/\d+$/, ""))) {
-          // Pool IDs are token-contract pairs, not hashes. Validate the exact pair below instead.
-        }
-        if (payload.poolId !== "wrap.testnet|wbtc.ft.ref-labs.testnet|100" &&
-            payload.poolId !== "wrap.testnet|wbtc.ft.ref-labs.testnet|400" &&
-            payload.poolId !== "wrap.testnet|wbtc.ft.ref-labs.testnet|2000" &&
-            payload.poolId !== "wrap.testnet|wbtc.ft.ref-labs.testnet|10000") {
+        if (payload.poolId !== "wbtc.ft.ref-labs.testnet|wrap.testnet|100" &&
+            payload.poolId !== "wbtc.ft.ref-labs.testnet|wrap.testnet|400" &&
+            payload.poolId !== "wbtc.ft.ref-labs.testnet|wrap.testnet|2000" &&
+            payload.poolId !== "wbtc.ft.ref-labs.testnet|wrap.testnet|10000") {
           throw new Error("The Ref Finance pool ID is not an approved wNEAR/WBTC testnet route.");
         }
         if (!/^\d+$/.test(payload.amountIn) || !/^\d+$/.test(payload.minimumOut) ||
