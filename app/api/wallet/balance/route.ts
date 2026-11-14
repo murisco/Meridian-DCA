@@ -68,7 +68,7 @@ export async function GET(request: Request) {
       return Response.json({ error: "The testnet account was not found or has no readable balance." }, { status: 404 });
     }
 
-    const [tokenBalances, wrappedNearResult, wrapStorageResult] = await Promise.all([
+    const [tokenBalances, wrappedNearResult, wrapStorageResult, refWbtcBalanceResult, refWbtcStorageResult, refWbtcBoundsResult] = await Promise.all([
       Promise.all(TEST_TOKENS.map(async (token) => {
       try {
         const argsBase64 = Buffer.from(JSON.stringify({ account_id: accountId }), "utf8").toString("base64");
@@ -123,6 +123,42 @@ export async function GET(request: Request) {
           args_base64: Buffer.from(JSON.stringify({ account_id: accountId }), "utf8").toString("base64"),
         },
       }),
+      rpcQuery({
+        jsonrpc: "2.0",
+        id: "meridian-ref-wbtc-balance",
+        method: "query",
+        params: {
+          request_type: "call_function",
+          finality: "final",
+          account_id: "wbtc.ft.ref-labs.testnet",
+          method_name: "ft_balance_of",
+          args_base64: Buffer.from(JSON.stringify({ account_id: accountId }), "utf8").toString("base64"),
+        },
+      }),
+      rpcQuery({
+        jsonrpc: "2.0",
+        id: "meridian-ref-wbtc-storage",
+        method: "query",
+        params: {
+          request_type: "call_function",
+          finality: "final",
+          account_id: "wbtc.ft.ref-labs.testnet",
+          method_name: "storage_balance_of",
+          args_base64: Buffer.from(JSON.stringify({ account_id: accountId }), "utf8").toString("base64"),
+        },
+      }),
+      rpcQuery({
+        jsonrpc: "2.0",
+        id: "meridian-ref-wbtc-bounds",
+        method: "query",
+        params: {
+          request_type: "call_function",
+          finality: "final",
+          account_id: "wbtc.ft.ref-labs.testnet",
+          method_name: "storage_balance_bounds",
+          args_base64: Buffer.from("{}", "utf8").toString("base64"),
+        },
+      }),
     ]);
 
     const wrapBalanceRaw = decodeJsonResult(wrappedNearResult.result?.result);
@@ -135,6 +171,19 @@ export async function GET(request: Request) {
     }
     const wrapRegistered = wrapStorage !== null;
 
+    const refWbtcBalanceRawValue = decodeJsonResult(refWbtcBalanceResult.result?.result);
+    if (typeof refWbtcBalanceRawValue !== "string" || !/^\\d+$/.test(refWbtcBalanceRawValue)) {
+      throw new Error("Could not verify the Ref Finance testnet WBTC balance.");
+    }
+    const refWbtcStorage = decodeJsonResult(refWbtcStorageResult.result?.result);
+    if (refWbtcStorage !== null && (typeof refWbtcStorage !== "object" || !("total" in refWbtcStorage))) {
+      throw new Error("Ref Finance WBTC returned an unexpected storage-registration response.");
+    }
+    const refWbtcBounds = decodeJsonResult(refWbtcBoundsResult.result?.result);
+    if (!refWbtcBounds || typeof refWbtcBounds !== "object" || !("min" in refWbtcBounds) || typeof refWbtcBounds.min !== "string" || !/^\\d+$/.test(refWbtcBounds.min)) {
+      throw new Error("Could not read Ref Finance WBTC storage registration requirement.");
+    }
+
     return Response.json({
       network: "testnet",
       accountId,
@@ -146,6 +195,14 @@ export async function GET(request: Request) {
         contractId: "wrap.testnet",
       },
       wrapRegistered,
+      refWbtc: {
+        contractId: "wbtc.ft.ref-labs.testnet",
+        balance: formatUnits(refWbtcBalanceRawValue, 8, 8),
+        rawBalance: refWbtcBalanceRawValue,
+        decimals: 8,
+        registered: refWbtcStorage !== null,
+        storageMinimum: refWbtcBounds.min,
+      },
       tokens: tokenBalances.filter((token): token is NonNullable<typeof token> => token !== null),
       updatedAt: new Date().toISOString(),
       source: "NEAR testnet RPC and Tidepool test-token contracts",
