@@ -615,3 +615,8 @@ h1 em,h2 em{color:#68e3f1}
 .recurring-plan-field .ref-direct-heading{margin-bottom:12px}
 .recurring-plan-field .field{margin-bottom:0}
 .recurring-plan-field .field-hint{max-width:440px;line-height:1.5}
+
+.wallet-wrap-label{font:500 8px 'DM Mono',monospace;letter-spacing:.1em;color:#80dbe7}
+.wallet-wrap-input{width:100%;height:38px;padding:0 10px;border:1px solid rgba(123,164,187,.28);border-radius:6px;background:#111e2c;color:#edf7fb;font:600 12px 'DM Mono',monospace;outline:none}
+.wallet-wrap-input:focus{border-color:rgba(90,224,242,.65);box-shadow:0 0 0 2px rgba(90,224,242,.1)}
+.wallet-wrap-input:disabled{opacity:.5}
