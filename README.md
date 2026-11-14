@@ -104,3 +104,18 @@ The dashboard now defaults to **Tidepool testnet sandbox** for testing with valu
 The connected NEAR wallet remains testnet-only. Its menu reads the native NEAR balance and the six Tidepool NEP-141 test-token balances using NEAR testnet RPC. The balance reader is read-only.
 
 **Important:** both quote modes remain preview-only in MERIDIAN. The app does not create a deposit address, request a transaction signature, transfer funds, or execute a swap. Tidepool supports end-to-end testnet swaps externally, but MERIDIAN's deposit and settlement flow is not enabled in this prototype.
+
+
+## Native NEAR testnet wrapping
+
+The connected wallet panel includes an opt-in **Wrap 0.02 NEAR → wNEAR** action for the NEAR testnet wrapper contract `wrap.testnet`.
+
+- The app checks the wallet's `wrap.testnet` storage registration status and current native NEAR balance before preparing the transaction.
+- If the account is not registered, the wallet transaction includes `storage_deposit` with a 0.00125 NEAR attached deposit, followed by `near_deposit` with exactly 0.02 NEAR.
+- If already registered, only the 0.02 NEAR `near_deposit` call is included.
+- Each function call uses 30 Tgas. The app keeps a 0.03 NEAR minimum liquid-balance reserve before allowing the action; actual gas is separate.
+- The user must review and approve the transaction in their connected wallet. MERIDIAN never has the user's private keys.
+- The app only reports wrapping success after the NEAR testnet RPC confirms that the `wrap.testnet` wNEAR balance increased by at least 0.02.
+- This creates `wrap.testnet` wNEAR. It is distinct from Tidepool's `wnear.tidepool-sandbox.testnet` token and cannot be assumed to be accepted by Tidepool's sandbox routes.
+
+This transaction feature is testnet-only and is not a production financial flow.
