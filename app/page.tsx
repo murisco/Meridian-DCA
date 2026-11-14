@@ -716,12 +716,12 @@ export default function Home() {
           </div>
 
           <div className="network-switcher">
-            <label htmlFor="quote-network">QUOTE ENVIRONMENT</label>
+            <label htmlFor="quote-network">QUOTE PREVIEW SOURCE</label>
             <select id="quote-network" value={network} onChange={(event) => { setNetwork(event.target.value as IntentNetwork); setQuoteResult(null); setQuoteError(""); setRefRouteQuote(null); setRefRouteError(""); setLiveSwapStatus(""); setLiveSwapMessage(""); setAssetSearch(""); }}>
               <option value="testnet">Testnet sandbox · Tidepool</option>
               <option value="mainnet">Mainnet · NEAR Intents 1Click</option>
             </select>
-            <span>{network === "testnet" ? "Free test assets · community sandbox · no real value" : "Official 1Click mainnet · dry-run quote only · no funds moved"}</span>
+            <span>{network === "testnet" ? "Tidepool is used for quote previews. Your immediate wNEAR → WBTC purchase uses Ref Finance below." : "Official 1Click mainnet · dry-run quote only · no funds moved"}</span>
           </div>
 
           {assetError && <div className="alert error">{assetError} <button type="button" onClick={() => window.location.reload()}>Retry</button></div>}
@@ -807,7 +807,7 @@ export default function Home() {
             <div className="recurring-plan-field">
               <div className="ref-direct-heading"><strong>SET UP YOUR RECURRING PLAN</strong><span>AFTER FIRST BUY</span></div>
               <div className="field">
-                <label htmlFor="frequency">REPEAT EVERY</label>
+                <label htmlFor="frequency">RECURRING FREQUENCY</label>
                 <select id="frequency" value={frequency} onChange={(event) => setFrequency(event.target.value as Plan["frequency"])}>
                   <option>Daily</option><option>Weekly</option><option>Monthly</option>
                 </select>
