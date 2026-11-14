@@ -195,8 +195,8 @@ export async function POST(request: Request) {
       try {
         const quote = await view(REF_DCL_CONTRACT, "quote", {
           pool_ids: [poolId],
-          input_token: INPUT_TOKEN,
-          output_token: OUTPUT_TOKEN,
+          input_token: inputMeta,
+          output_token: outputMeta,
           input_amount: amountIn,
           tag: "meridian-dca-" + fee + "-" + amountIn,
         });
@@ -284,14 +284,19 @@ export async function GET() {
     }
   }));
 
+  const diagnosticInputMeta = metadataChecks[0].ok ? metadataChecks[0].data : null;
+  const diagnosticOutputMeta = metadataChecks[1].ok ? metadataChecks[1].data : null;
   const amountIn = "10000000000000000000000"; // 0.01 wNEAR
   const quoteChecks = await Promise.all([100, 400, 2000, 10000].map(async (fee) => {
+    if (!diagnosticInputMeta || !diagnosticOutputMeta) {
+      return { fee, poolId: [INPUT_TOKEN, OUTPUT_TOKEN].sort().join("|") + "|" + fee, ok: false, error: "Token metadata unavailable for DCL quote." };
+    }
     const poolId = [INPUT_TOKEN, OUTPUT_TOKEN].sort().join("|") + "|" + fee;
     try {
       const quote = await view(REF_DCL_CONTRACT, "quote", {
         pool_ids: [poolId],
-        input_token: INPUT_TOKEN,
-        output_token: OUTPUT_TOKEN,
+        input_token: diagnosticInputMeta,
+        output_token: diagnosticOutputMeta,
         input_amount: amountIn,
         tag: "meridian-diagnostic-" + fee,
       });
