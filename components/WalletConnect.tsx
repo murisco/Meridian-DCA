@@ -240,7 +240,7 @@ export default function WalletConnect() {
               actions: [{
                 pool_id: Number(payload.poolId),
                 token_in: "wrap.testnet",
-                token_out: "wbtc.fakes.testnet",
+                token_out: payload.outputContractId,
                 amount_in: payload.amountIn,
                 min_amount_out: payload.minimumOut,
               }],
