@@ -216,13 +216,25 @@ export async function POST(request: Request) {
       try {
         const quote = await view(REF_DCL_CONTRACT, "quote", {
           pool_ids: [poolId],
-          input_token: INPUT_TOKEN,
-          output_token: OUTPUT_TOKEN,
+          // Ref DCL quote expects TokenMetadata objects, not contract-ID strings.
+          // NEP-141 ft_metadata omits the SDK's required id field, so add it explicitly.
+          input_token: { ...inputMeta, id: INPUT_TOKEN },
+          output_token: { ...outputMeta, id: OUTPUT_TOKEN },
           input_amount: amountIn,
           tag: "meridian-dca-" + pool.fee + "-" + amountIn,
         });
         if (!quote || !/^\d+$/.test(String(quote.amount || "")) || BigInt(quote.amount) <= 0n) {
           return { fee: Number(pool.fee), poolId, quote: null, error: "Ref returned no positive output for this pool." };
+        }
+        // Reject impossible output larger than the pool's reported output-token reserves.
+        const outputReserveRaw = pool.token_x === OUTPUT_TOKEN
+          ? String(pool.total_x || "0")
+          : pool.token_y === OUTPUT_TOKEN
+            ? String(pool.total_y || "0")
+            : "0";
+        if (/^\d+$/.test(outputReserveRaw) && BigInt(outputReserveRaw) > 0n &&
+            BigInt(quote.amount) > BigInt(outputReserveRaw)) {
+          return { fee: Number(pool.fee), poolId, quote: null, error: "Ref quote exceeds the pool's reported output-token reserves. Quote rejected." };
         }
         const minimumOut = (BigInt(quote.amount) * BigInt(10000 - slippageBps) / 10000n).toString();
         return {
