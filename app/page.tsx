@@ -190,7 +190,7 @@ export default function Home() {
   const [assetSearch, setAssetSearch] = useState("");
   const [originAssetId, setOriginAssetId] = useState("");
   const [destinationAssetId, setDestinationAssetId] = useState("");
-  const [amount, setAmount] = useState("25");
+  const [amount, setAmount] = useState("");
   const [recipient, setRecipient] = useState("");
   const [refundTo, setRefundTo] = useState("");
   const [slippage, setSlippage] = useState("100");
@@ -402,7 +402,11 @@ export default function Home() {
     setLiveSwapMessage("");
     try {
       if (network !== "testnet") throw new Error("Ref Finance route is only available on NEAR testnet.");
-      if (!recipient.trim()) throw new Error("Enter your connected NEAR testnet wallet account in the destination wallet field.");
+      if (origin?.symbol.toUpperCase() !== "WNEAR" || destination?.symbol.toUpperCase() !== "WBTC") {
+        throw new Error("For the immediate Ref Finance purchase, select wNEAR as the source and wBTC as the destination.");
+      }
+      if (!amount.trim()) throw new Error("Enter the wNEAR amount you want to swap.");
+      if (!recipient.trim()) throw new Error("Connect your NEAR testnet wallet and use its address as the recipient.");
       const response = await fetch("/api/ref/quote", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -718,7 +722,7 @@ export default function Home() {
             <div className="field-row">
               <div className="field amount-field">
                 <label htmlFor="amount">AMOUNT PER BUY</label>
-                <div className="input-suffix"><input id="amount" inputMode="decimal" value={amount} onChange={(event) => { setAmount(event.target.value); setQuoteResult(null); }} placeholder="25.00" /><span>{origin?.symbol || "TOKEN"}</span></div>
+                <div className="input-suffix"><input id="amount" inputMode="decimal" value={amount} onChange={(event) => { setAmount(event.target.value); setQuoteResult(null); setRefRouteQuote(null); setRefRouteError(""); setLiveSwapStatus(""); setLiveSwapMessage(""); }} placeholder="e.g. 0.01" /><span>{origin?.symbol || "TOKEN"}</span></div>
               </div>
               <div className="field">
                 <label htmlFor="frequency">REPEAT EVERY</label>
@@ -730,7 +734,7 @@ export default function Home() {
 
             <div className="field">
               <label htmlFor="recipient">DESTINATION WALLET ADDRESS</label>
-              <input id="recipient" value={recipient} onChange={(event) => { setRecipient(event.target.value); setQuoteResult(null); }} placeholder="Address on the destination network" autoComplete="off" />
+              <input id="recipient" value={recipient} onChange={(event) => { setRecipient(event.target.value); setQuoteResult(null); setRefRouteQuote(null); setRefRouteError(""); setLiveSwapStatus(""); setLiveSwapMessage(""); }} placeholder="Address on the destination network" autoComplete="off" />
               <span className="field-hint">The address that should receive the purchased asset.</span>
             </div>
             <div className="field">
@@ -741,14 +745,45 @@ export default function Home() {
 
             <div className="field">
               <div className="label-with-value"><label htmlFor="slippage">MAXIMUM SLIPPAGE</label><strong>{(Number(slippage) / 100).toFixed(2)}%</strong></div>
-              <input className="range-input" id="slippage" type="range" min="10" max="500" step="10" value={slippage} onChange={(event) => { setSlippage(event.target.value); setQuoteResult(null); }} />
+              <input className="range-input" id="slippage" type="range" min="10" max="500" step="10" value={slippage} onChange={(event) => { setSlippage(event.target.value); setQuoteResult(null); setRefRouteQuote(null); setRefRouteError(""); }} />
               <div className="range-labels"><span>0.10%</span><span>5.00%</span></div>
             </div>
+
+            {network === "testnet" && (
+            <div className="ref-direct-panel investment-buy-panel">
+            <div className="ref-direct-heading"><strong>MAKE YOUR FIRST BUY NOW</strong><span>REF FINANCE · TESTNET</span></div>
+            <p className="live-swap-note">This route uses your actual <strong>wrap.testnet</strong> wNEAR and Ref Finance's testnet WBTC token <strong>wbtc.fakes.testnet</strong>. It is separate from Tidepool's sandbox assets and capped at 0.02 wNEAR.</p>
+            <div className="quote-detail"><span>Swap pair</span><strong>wNEAR → WBTC</strong></div>
+            <div className="quote-detail"><span>Input amount</span><strong>{amount || "—"} wNEAR</strong></div>
+            <div className="quote-detail"><span>Wallet account</span><strong>{recipient.trim() || "Enter wallet address above"}</strong></div>
+            {!refRouteQuote ? (
+            <button className="button button-primary full-button" type="button" onClick={prepareRefFinanceQuote} disabled={refRouteLoading}>
+            {refRouteLoading ? "Getting swap quote…" : "Preview immediate swap"}
+            </button>
+            ) : (
+            <>
+            <div className="quote-detail"><span>Estimated WBTC output</span><strong>{refRouteQuote.bestQuote.amountOutFormatted} WBTC</strong></div>
+            <div className="quote-detail"><span>Minimum received</span><strong>{formatBaseUnits(refRouteQuote.bestQuote.minimumOut, 8)} WBTC</strong></div>
+            <div className="quote-detail"><span>Pool fee</span><strong>{(refRouteQuote.bestQuote.fee / 100).toFixed(2)}%</strong></div>
+            <div className="quote-detail"><span>Pool ID</span><strong className="reference">{refRouteQuote.bestQuote.poolId}</strong></div>
+            <div className="quote-detail"><span>WBTC wallet registration</span><strong>{refRouteQuote.outputRegistered ? "Already registered" : "Required before swap"}</strong></div>
+            {!refRouteQuote.outputRegistered && <p className="fee-note">Your wallet will first ask you to register the WBTC token account with a one-time storage deposit of {formatBaseUnits(refRouteQuote.outputStorageMinimum, 24)} NEAR. The swap is a separate approval.</p>}
+            <button className="button button-primary full-button" type="button" onClick={executeRefFinanceSwap} disabled={["AWAITING_WALLET","REGISTERING_OUTPUT","SUBMITTED","PENDING","SUCCESS"].includes(liveSwapStatus)}>
+            Approve and swap now
+            </button>
+            <button className="button button-secondary full-button" type="button" onClick={() => { setRefRouteQuote(null); setLiveSwapStatus(""); setLiveSwapMessage(""); }}>Discard Ref quote</button>
+            </>
+            )}
+            {refRouteError && <div className="swap-execution-state error" role="alert"><strong>ROUTE CHECK</strong><span>{refRouteError}</span></div>}
+            {liveSwapStatus && <div className={"swap-execution-state " + (liveSwapStatus === "SUCCESS" ? "success" : liveSwapStatus === "ERROR" ? "error" : "")} role="status" aria-live="polite"><strong>{liveSwapStatus.replaceAll("_", " ")}</strong><span>{liveSwapMessage}</span></div>}
+            <p className="fee-note">Ref Finance quotes are checked live from the testnet DCL contract. No transaction is sent until you approve it in your wallet. This is your immediate purchase. Save a recurring plan separately after the swap.</p>
+            </div>
+            )}
 
             {quoteError && <div className="alert error">{quoteError}</div>}
 
             <div className="form-actions">
-              <button className="button button-primary" type="submit" disabled={quoteLoading || assetsLoading || !origin || !destination}>
+              <button className="button button-primary" type="submit" disabled={quoteLoading || assetsLoading || !origin || !destination || !amount.trim()}>
                 {quoteLoading ? <><span className="spinner" /> Fetching live quote…</> : <>Preview live quote <span>↗</span></>}
               </button>
               <button className="button button-secondary" type="button" onClick={createPlan} disabled={assetsLoading || !origin || !destination}>Save recurring plan</button>
@@ -765,36 +800,7 @@ export default function Home() {
               <div><span className="step-number">02</span><h3>Quote preview</h3></div>
               <span className="live-tag"><span className="pulse-dot" /> {network === "testnet" ? "TIDEPOOL TESTNET" : "1CLICK MAINNET"}</span>
             </div>
-            {network === "testnet" && (
-              <div className="ref-direct-panel">
-                <div className="ref-direct-heading"><strong>USE YOUR EXISTING wNEAR</strong><span>REF FINANCE · TESTNET</span></div>
-                <p className="live-swap-note">This route uses your actual <strong>wrap.testnet</strong> wNEAR and Ref Finance's testnet WBTC token <strong>wbtc.fakes.testnet</strong>. It is separate from Tidepool's sandbox assets and capped at 0.02 wNEAR.</p>
-                <div className="quote-detail"><span>Swap pair</span><strong>wNEAR → WBTC</strong></div>
-                <div className="quote-detail"><span>Input amount</span><strong>{amount || "—"} wNEAR</strong></div>
-                <div className="quote-detail"><span>Wallet account</span><strong>{recipient.trim() || "Enter wallet address above"}</strong></div>
-                {!refRouteQuote ? (
-                  <button className="button button-primary full-button" type="button" onClick={prepareRefFinanceQuote} disabled={refRouteLoading}>
-                    {refRouteLoading ? "Checking live pool and quote…" : "Check Ref Finance liquidity"}
-                  </button>
-                ) : (
-                  <>
-                    <div className="quote-detail"><span>Estimated WBTC output</span><strong>{refRouteQuote.bestQuote.amountOutFormatted} WBTC</strong></div>
-                    <div className="quote-detail"><span>Minimum received</span><strong>{formatBaseUnits(refRouteQuote.bestQuote.minimumOut, 8)} WBTC</strong></div>
-                    <div className="quote-detail"><span>Pool fee</span><strong>{(refRouteQuote.bestQuote.fee / 100).toFixed(2)}%</strong></div>
-                    <div className="quote-detail"><span>Pool ID</span><strong className="reference">{refRouteQuote.bestQuote.poolId}</strong></div>
-                    <div className="quote-detail"><span>WBTC wallet registration</span><strong>{refRouteQuote.outputRegistered ? "Already registered" : "Required before swap"}</strong></div>
-                    {!refRouteQuote.outputRegistered && <p className="fee-note">Your wallet will first ask you to register the WBTC token account with a one-time storage deposit of {formatBaseUnits(refRouteQuote.outputStorageMinimum, 24)} NEAR. The swap is a separate approval.</p>}
-                    <button className="button button-primary full-button" type="button" onClick={executeRefFinanceSwap} disabled={["AWAITING_WALLET","REGISTERING_OUTPUT","SUBMITTED","PENDING","SUCCESS"].includes(liveSwapStatus)}>
-                      Approve wNEAR → WBTC swap
-                    </button>
-                    <button className="button button-secondary full-button" type="button" onClick={() => { setRefRouteQuote(null); setLiveSwapStatus(""); setLiveSwapMessage(""); }}>Discard Ref quote</button>
-                  </>
-                )}
-                {refRouteError && <div className="swap-execution-state error" role="alert"><strong>ROUTE CHECK</strong><span>{refRouteError}</span></div>}
-                {liveSwapStatus && <div className={"swap-execution-state " + (liveSwapStatus === "SUCCESS" ? "success" : liveSwapStatus === "ERROR" ? "error" : "")} role="status" aria-live="polite"><strong>{liveSwapStatus.replaceAll("_", " ")}</strong><span>{liveSwapMessage}</span></div>}
-                <p className="fee-note">Ref Finance quotes are checked live from the testnet DCL contract. No transaction is sent until you approve it in your wallet. This first buy is a one-time swap; the saved weekly plan does not yet execute future purchases automatically.</p>
-              </div>
-            )}
+
             {!quoteResult && !quoteLoading && (
               <div className="empty-quote">
                 <div className="empty-icon">↗</div>
