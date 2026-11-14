@@ -458,7 +458,7 @@ export default function Home() {
         <div className="hero-copy">
           <div className="eyebrow"><span className="eyebrow-line" /> CROSS-CHAIN INVESTING, MADE STEADY</div>
           <h1>Make every interval<br /><em>count across chains.</em></h1>
-          <p>Build a steady crypto-buying strategy across supported networks. Preview each route with a live NEAR Intents quote before any funds move.</p>
+          <p>Build a steady crypto-buying strategy across supported networks. Preview each route with a live testnet or mainnet quote before any funds move.</p>
           <div className="hero-actions">
             <a className="primary-link" href="#planner">Create an investment plan <span>↗</span></a>
             <span className="hero-note"><span className="shield">◇</span> No transfers in this demo</span>
@@ -625,7 +625,7 @@ export default function Home() {
                 <div className="empty-route"><span>{origin?.symbol || "SOURCE"}</span><i>→</i><span>{destination?.symbol || "TARGET"}</span></div>
               </div>
             )}
-            {quoteLoading && <div className="quote-loading"><span className="spinner large" /><strong>Checking the route</strong><p>Requesting a fresh dry-run quote from NEAR Intents 1Click.</p></div>}
+            {quoteLoading && <div className="quote-loading"><span className="spinner large" /><strong>Checking the route</strong><p>{network === "testnet" ? "Requesting a fresh dry-run quote from the Tidepool testnet sandbox." : "Requesting a fresh dry-run quote from official NEAR Intents 1Click."}</p></div>}
             {quoteResult && quoteData && (
               <div className="quote-content">
                 <div className="quote-status"><span className="status-check">✓</span><span>QUOTE RECEIVED</span><b>DRY RUN</b></div>
@@ -691,7 +691,7 @@ export default function Home() {
         <h2>Simple by design.<br /><em>Transparent by default.</em></h2>
         <div className="how-grid">
           <article><span>01</span><div className="how-icon">⌁</div><h3>Choose your route</h3><p>Select a supported asset pair and the wallet addresses for delivery and refunds.</p></article>
-          <article><span>02</span><div className="how-icon">↗</div><h3>Preview the quote</h3><p>Get real market routing data from NEAR Intents without creating a deposit address.</p></article>
+          <article><span>02</span><div className="how-icon">↗</div><h3>Preview the quote</h3><p>Preview routing from Tidepool testnet or official NEAR Intents 1Click without creating a deposit address.</p></article>
           <article><span>03</span><div className="how-icon">◷</div><h3>Set your rhythm</h3><p>Save a daily, weekly or monthly plan. This release records your plan locally only.</p></article>
         </div>
       </section>
@@ -699,7 +699,7 @@ export default function Home() {
       <footer className="footer">
         <a className="brand footer-brand" href="/"><span className="brand-mark"><i /><i /><i /></span><span>MERIDIAN<span className="brand-light"> DCA</span></span></a>
         <span>Cross-chain investing, with intention.</span>
-        <span>Powered by NEAR Intents <b>·</b> Dry-run release</span>
+        <span>NEAR Intents + Tidepool sandbox <b>·</b> Dry-run release</span>
       </footer>
     </main>
   );
