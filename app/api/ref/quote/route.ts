@@ -1,7 +1,7 @@
 const RPC_URL = "https://rpc.testnet.fastnear.com";
 const REF_DCL_CONTRACT = "dclv2.ref-dev.testnet";
 const INPUT_TOKEN = "wrap.testnet";
-const OUTPUT_TOKEN = "wbtc.ft.ref-labs.testnet";
+const OUTPUT_TOKEN = "wbtc.fakes.testnet";
 const FEES = [100, 400, 2000, 10000];
 const ONE = 10n ** 24n;
 
@@ -106,7 +106,7 @@ export async function POST(request: Request) {
         available: false,
         error: matchingPools.length
           ? "A Ref Finance WBTC/wNEAR pool is listed, but it did not return a usable quote for this amount."
-          : "No running Ref Finance testnet pool exists for wrap.testnet wNEAR and wbtc.ft.ref-labs.testnet. No transaction was sent.",
+          : "No running Ref Finance testnet pool exists for wrap.testnet wNEAR and wbtc.fakes.testnet. No transaction was sent.",
         inputToken: { contractId: INPUT_TOKEN, symbol: inputMeta.symbol, decimals: inputMeta.decimals },
         outputToken: { contractId: OUTPUT_TOKEN, symbol: outputMeta.symbol, decimals: outputMeta.decimals },
         matchingPools,
