@@ -134,7 +134,7 @@ export async function GET(request: Request) {
           method_name: "ft_balance_of",
           args_base64: Buffer.from(JSON.stringify({ account_id: accountId }), "utf8").toString("base64"),
         },
-      }),
+      }).catch(() => null),
       rpcQuery({
         jsonrpc: "2.0",
         id: "meridian-ref-wbtc-storage",
@@ -146,7 +146,7 @@ export async function GET(request: Request) {
           method_name: "storage_balance_of",
           args_base64: Buffer.from(JSON.stringify({ account_id: accountId }), "utf8").toString("base64"),
         },
-      }),
+      }).catch(() => null),
       rpcQuery({
         jsonrpc: "2.0",
         id: "meridian-ref-wbtc-bounds",
@@ -158,7 +158,7 @@ export async function GET(request: Request) {
           method_name: "storage_balance_bounds",
           args_base64: Buffer.from("{}", "utf8").toString("base64"),
         },
-      }),
+      }).catch(() => null),
     ]);
 
     const wrapBalanceRaw = decodeJsonResult(wrappedNearResult.result?.result);
@@ -171,17 +171,35 @@ export async function GET(request: Request) {
     }
     const wrapRegistered = wrapStorage !== null;
 
-    const refWbtcBalanceRawValue = decodeJsonResult(refWbtcBalanceResult.result?.result);
-    if (typeof refWbtcBalanceRawValue !== "string" || !/^\d+$/.test(refWbtcBalanceRawValue)) {
-      throw new Error("Could not verify the Ref Finance testnet WBTC balance.");
-    }
-    const refWbtcStorage = decodeJsonResult(refWbtcStorageResult.result?.result);
-    if (refWbtcStorage !== null && (typeof refWbtcStorage !== "object" || !("total" in refWbtcStorage))) {
-      throw new Error("Ref Finance WBTC returned an unexpected storage-registration response.");
-    }
-    const refWbtcBounds = decodeJsonResult(refWbtcBoundsResult.result?.result);
-    if (!refWbtcBounds || typeof refWbtcBounds !== "object" || !("min" in refWbtcBounds) || typeof refWbtcBounds.min !== "string" || !/^\d+$/.test(refWbtcBounds.min)) {
-      throw new Error("Could not read Ref Finance WBTC storage registration requirement.");
+    let refWbtc: {
+      contractId: string;
+      balance: string;
+      rawBalance: string;
+      decimals: number;
+      registered: boolean;
+      storageMinimum: string;
+    } | null = null;
+    if (refWbtcBalanceResult && refWbtcStorageResult && refWbtcBoundsResult) {
+      try {
+        const raw = decodeJsonResult(refWbtcBalanceResult.result?.result);
+        const storage = decodeJsonResult(refWbtcStorageResult.result?.result);
+        const bounds = decodeJsonResult(refWbtcBoundsResult.result?.result);
+        if (typeof raw === "string" && /^\d+$/.test(raw) &&
+            (storage === null || (typeof storage === "object" && "total" in storage)) &&
+            bounds && typeof bounds === "object" && "min" in bounds &&
+            typeof bounds.min === "string" && /^\d+$/.test(bounds.min)) {
+          refWbtc = {
+            contractId: "wbtc.ft.ref-labs.testnet",
+            balance: formatUnits(raw, 8, 8),
+            rawBalance: raw,
+            decimals: 8,
+            registered: storage !== null,
+            storageMinimum: bounds.min,
+          };
+        }
+      } catch {
+        // Ref Finance WBTC is an optional testnet asset; never break the core wallet panel.
+      }
     }
 
     return Response.json({
@@ -195,14 +213,7 @@ export async function GET(request: Request) {
         contractId: "wrap.testnet",
       },
       wrapRegistered,
-      refWbtc: {
-        contractId: "wbtc.ft.ref-labs.testnet",
-        balance: formatUnits(refWbtcBalanceRawValue, 8, 8),
-        rawBalance: refWbtcBalanceRawValue,
-        decimals: 8,
-        registered: refWbtcStorage !== null,
-        storageMinimum: refWbtcBounds.min,
-      },
+      refWbtc,
       tokens: tokenBalances.filter((token): token is NonNullable<typeof token> => token !== null),
       updatedAt: new Date().toISOString(),
       source: "NEAR testnet RPC and Tidepool test-token contracts",
