@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { NearConnector as NearConnectorType } from "@fastnear/near-connect";
-import type { WalletSelector } from "@near-wallet-selector/core";
+import type { InstantLinkWallet, WalletSelector } from "@near-wallet-selector/core";
 
 declare global {
   interface Window {
@@ -126,7 +126,7 @@ export default function WalletConnect() {
       if (insideMeteorApp) {
         const selector = meteorSelectorRef.current;
         if (!selector) throw new Error("Meteor's in-app wallet connector is not ready. Reload this page inside Meteor Wallet.");
-        const wallet = await selector.wallet("meteor-wallet-app");
+        const wallet = await selector.wallet<InstantLinkWallet>("meteor-wallet-app");
         const accounts = await wallet.signIn({});
         const account = accounts[0]?.accountId ?? "";
         if (!account) throw new Error("Meteor Wallet did not return a testnet account.");
