@@ -63,6 +63,10 @@ export default function WalletConnect() {
   const [refSwapBusy, setRefSwapBusy] = useState(false);
 
   useEffect(() => {
+    window.dispatchEvent(new CustomEvent("meridian:wallet-account", { detail: { accountId } }));
+  }, [accountId]);
+
+  useEffect(() => {
     let active = true;
     let connector: NearConnectorType | null = null;
 
