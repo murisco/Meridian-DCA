@@ -237,6 +237,12 @@ export default function Home() {
       setQuoteError("Choose both assets and enter the amount, destination and refund addresses before saving a plan.");
       return;
     }
+    try {
+      toBaseUnits(amount, origin.decimals);
+    } catch (error) {
+      setQuoteError(error instanceof Error ? error.message : "Enter a valid amount for the selected token.");
+      return;
+    }
     const newPlan: Plan = {
       id: window.crypto?.randomUUID?.() || String(Date.now()),
       sourceAssetId: origin.assetId,
@@ -295,7 +301,8 @@ export default function Home() {
         const amountOut = BigInt(amountOutRaw);
         const minimumOut = BigInt(minimumOutRaw);
         if (amountOut > 0n && minimumOut <= amountOut) {
-          const impliedSlippageBps = ((amountOut - minimumOut) * 10000n) / amountOut;
+          const difference = amountOut - minimumOut;
+          const impliedSlippageBps = (difference * 10000n + amountOut - 1n) / amountOut;
           if (impliedSlippageBps <= BigInt(plan.slippage)) {
             status = "PASSED";
             message = "Minimum output is within the saved slippage limit of " + (plan.slippage / 100).toFixed(2) + "%.";
