@@ -46,15 +46,21 @@ export async function POST(request: Request) {
     }
 
     const amountInBaseUnits = toBaseUnits(amount, origin.decimals);
+    const deadline = new Date(Date.now() + 3 * 60 * 1000).toISOString();
     const quoteRequest = {
+      // Preview only: never create a deposit address or initiate a swap.
       dry: true,
       swapType: "EXACT_INPUT",
+      slippageTolerance,
       originAsset,
+      depositType: "ORIGIN_CHAIN",
       destinationAsset,
       amount: amountInBaseUnits,
       recipient,
+      recipientType: "DESTINATION_CHAIN",
       refundTo,
-      slippageTolerance,
+      refundType: "ORIGIN_CHAIN",
+      deadline,
       referral: "meridian-dca",
     };
 
@@ -80,6 +86,14 @@ export async function POST(request: Request) {
       assets: {
         origin: { symbol: origin.symbol, blockchain: origin.blockchain, decimals: origin.decimals },
         destination: { symbol: destination.symbol, blockchain: destination.blockchain, decimals: destination.decimals },
+      },
+      quoteControls: {
+        slippageTolerance,
+        slippagePercent: (slippageTolerance / 100).toFixed(2),
+        deadline,
+        depositType: "ORIGIN_CHAIN",
+        recipientType: "DESTINATION_CHAIN",
+        refundType: "ORIGIN_CHAIN",
       },
       feeNote: process.env.NEAR_INTENTS_JWT
         ? "Authenticated NEAR Intents fee schedule is in use."
