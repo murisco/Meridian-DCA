@@ -122,7 +122,7 @@ export async function GET(request: Request) {
     ]);
 
     const wrapBalanceRaw = decodeJsonResult(wrappedNearResult.result?.result);
-    if (typeof wrapBalanceRaw !== "string" || !/^\\d+$/.test(wrapBalanceRaw)) {
+    if (typeof wrapBalanceRaw !== "string" || !/^\d+$/.test(wrapBalanceRaw)) {
       throw new Error("Could not verify the testnet wNEAR balance.");
     }
     const wrapStorage = decodeJsonResult(wrapStorageResult.result?.result);
