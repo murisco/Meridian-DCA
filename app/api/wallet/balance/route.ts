@@ -246,11 +246,15 @@ export async function GET(request: Request) {
       registered: boolean;
       storageMinimum: string;
     } | null = null;
-    if (refUsdtBalanceResult && refUsdtStorageResult && refUsdtBoundsResult) {
+    if (refUsdtStorageResult && refUsdtBoundsResult) {
       try {
-        const raw = decodeJsonResult(refUsdtBalanceResult.result?.result);
         const storage = decodeJsonResult(refUsdtStorageResult.result?.result);
         const bounds = decodeJsonResult(refUsdtBoundsResult.result?.result);
+        // An unregistered NEP-141 account may not have a readable token balance yet.
+        // In that case, a verified null storage record means its current balance is zero.
+        const raw = refUsdtBalanceResult
+          ? decodeJsonResult(refUsdtBalanceResult.result?.result)
+          : storage === null ? "0" : null;
         if (typeof raw === "string" && /^\d+$/.test(raw) &&
             (storage === null || (typeof storage === "object" && "total" in storage)) &&
             bounds && typeof bounds === "object" && "min" in bounds &&
