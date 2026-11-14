@@ -38,8 +38,14 @@ export async function POST(request: Request) {
   if (!amount || !recipient || !refundTo) {
     return Response.json({ error: "Amount, recipient wallet and refund wallet are required." }, { status: 400 });
   }
-  if (!/^[a-z0-9._-]{2,64}$/.test(recipient) || !/^[a-z0-9._-]{2,64}$/.test(refundTo)) {
-    return Response.json({ error: "Use valid NEAR testnet account IDs for recipient and refund." }, { status: 400 });
+  // The source deposit and refund wallet are NEAR testnet. The recipient
+  // belongs to the selected destination chain and may be an EVM, Bitcoin,
+  // Solana, Stellar, Sui, XRP or NEAR address; Tidepool validates that format.
+  if (!/^[a-z0-9._-]{2,64}$/.test(refundTo)) {
+    return Response.json({ error: "The refund address must be a valid NEAR testnet account." }, { status: 400 });
+  }
+  if (!recipient || recipient.length > 200) {
+    return Response.json({ error: "Enter the destination address for the selected network." }, { status: 400 });
   }
   if (!Number.isInteger(slippageTolerance) || slippageTolerance < 1 || slippageTolerance > 500) {
     return Response.json({ error: "Slippage must be between 1 and 500 basis points." }, { status: 400 });
@@ -52,8 +58,11 @@ export async function POST(request: Request) {
     if (!origin || !destination) {
       return Response.json({ error: "One of the selected assets is no longer supported. Refresh the asset list." }, { status: 400 });
     }
-    if (origin.blockchain !== "near" || destination.blockchain !== "near" || !origin.contractAddress || !destination.contractAddress) {
-      return Response.json({ error: "The first live-swap release supports NEAR testnet tokens only." }, { status: 400 });
+    // Meridian signs the source deposit with NEAR Connect for this release.
+    // The selected destination may be on any chain exposed by the live Tidepool
+    // testnet catalogue; native destination assets need not have a contractAddress.
+    if (origin.blockchain !== "near" || !origin.contractAddress) {
+      return Response.json({ error: "For wallet-approved execution, choose a NEAR testnet source token. The destination can be on any supported testnet chain." }, { status: 400 });
     }
 
     const amountInBaseUnits = toBaseUnits(amount, origin.decimals);
@@ -98,8 +107,8 @@ export async function POST(request: Request) {
       dry: false,
       network: "testnet",
       provider: "Tidepool community testnet sandbox",
-      origin: { assetId: origin.assetId, contractAddress: origin.contractAddress, symbol: origin.symbol, decimals: origin.decimals },
-      destination: { assetId: destination.assetId, contractAddress: destination.contractAddress, symbol: destination.symbol, decimals: destination.decimals },
+      origin: { assetId: origin.assetId, contractAddress: origin.contractAddress, symbol: origin.symbol, decimals: origin.decimals, blockchain: origin.blockchain },
+      destination: { assetId: destination.assetId, contractAddress: destination.contractAddress || null, symbol: destination.symbol, decimals: destination.decimals, blockchain: destination.blockchain },
       quote: data,
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
