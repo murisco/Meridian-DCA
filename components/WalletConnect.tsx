@@ -81,6 +81,7 @@ export default function WalletConnect() {
     }
 
     let active = true;
+    setBalance(null);
     setBalanceLoading(true);
     setBalanceError("");
     fetch("/api/wallet/balance?accountId=" + encodeURIComponent(accountId), { cache: "no-store" })
