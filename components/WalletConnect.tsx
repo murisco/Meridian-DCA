@@ -177,7 +177,7 @@ export default function WalletConnect() {
         }
 
         setSwapBusy(true);
-        publishSwapUpdate("AWAITING_WALLET", "Review the wallet request. It registers the quote deposit account and transfers exactly " + source.balance + " or less? " + payload.originAsset.symbol + " to Tidepool.");
+        publishSwapUpdate("AWAITING_WALLET", "Review the wallet request. It registers the Tidepool deposit account and transfers the exact quoted amount of " + payload.originAsset.symbol + " to the quote deposit address.");
         const wallet = await connectorRef.current.wallet();
         const actions = [
           {
