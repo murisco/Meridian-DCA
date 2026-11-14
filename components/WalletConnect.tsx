@@ -222,7 +222,7 @@ export default function WalletConnect() {
                     output_token: "wbtc.fakes.testnet",
                     min_output_amount: payload.minimumOut,
                     referral_id: "",
-                    client_id: "meridian-dca",
+                    client_id: "",
                   },
                 }),
               },
