@@ -14,7 +14,6 @@ type WalletBalance = {
 };
 
 const WRAP_CONTRACT_ID = "wrap.testnet";
-const MAX_WRAP_AMOUNT_RAW = 3000000000000000000000000n; // cap this user-initiated wrap at 3 NEAR
 const WRAP_RESERVE_RAW = 500000000000000000000000n; // keep 0.5 NEAR liquid for gas
 const STORAGE_DEPOSIT_RAW = "1250000000000000000000"; // 0.00125 NEAR
 
@@ -26,7 +25,6 @@ function parseNearToYocto(value: string): bigint {
   const [whole, fraction = ""] = amount.split(".");
   const raw = BigInt(whole) * 10n ** 24n + BigInt((fraction + "0".repeat(24)).slice(0, 24));
   if (raw <= 0n) throw new Error("The amount must be greater than zero.");
-  if (raw > MAX_WRAP_AMOUNT_RAW) throw new Error("For this test, you can wrap up to 3 NEAR at a time.");
   return raw;
 }
 
@@ -77,7 +75,7 @@ export default function WalletConnect() {
   const [balanceError, setBalanceError] = useState("");
   const [balanceRefresh, setBalanceRefresh] = useState(0);
   const [wrapBusy, setWrapBusy] = useState(false);
-  const [wrapAmount, setWrapAmount] = useState("3");
+  const [wrapAmount, setWrapAmount] = useState("");
   const [wrapMessage, setWrapMessage] = useState("");
   const [wrapError, setWrapError] = useState("");
   const [swapBusy, setSwapBusy] = useState(false);
@@ -649,14 +647,13 @@ export default function WalletConnect() {
                     type="number"
                     inputMode="decimal"
                     min="0.000000000000000000000001"
-                    max="3"
                     step="0.01"
                     value={wrapAmount}
                     onChange={(event) => { setWrapAmount(event.target.value); setWrapError(""); setWrapMessage(""); }}
                     disabled={wrapBusy}
                   />
                   <div className="wallet-wrap-note">
-                    Convert up to <strong>3 NEAR</strong> into wNEAR on <strong>wrap.testnet</strong>. At least <strong>0.5 NEAR</strong> stays liquid for gas.
+                    Enter any amount of NEAR to convert into wNEAR on <strong>wrap.testnet</strong>. At least <strong>0.5 NEAR</strong> stays liquid for gas.
                     {balance?.wrapRegistered === false ? " First-time storage registration also attaches 0.00125 NEAR." : ""}
                     The wallet will show the exact amount for your approval.
                   </div>
