@@ -600,3 +600,12 @@ h1 em,h2 em{color:#68e3f1}
 .swap-execution-state.success strong{color:#73e8be}
 .swap-execution-state.error{border-color:rgba(255,133,133,.35);background:rgba(90,30,35,.2);color:#f1b6b6}
 .swap-execution-state.error strong{color:#ff9999}
+
+.ref-direct-panel{margin:18px 0;padding:16px;border:1px solid rgba(90,224,242,.35);border-radius:9px;background:linear-gradient(145deg,rgba(22,49,65,.72),rgba(9,20,31,.7))}
+.ref-direct-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px}
+.ref-direct-heading strong{font:600 10px 'DM Mono',monospace;letter-spacing:.1em;color:#8eeaf3}
+.ref-direct-heading span{font:500 8px 'DM Mono',monospace;letter-spacing:.08em;color:#8ca8b8}
+.ref-direct-panel .quote-detail{padding:7px 0}
+.ref-direct-panel .quote-detail strong{max-width:66%;overflow-wrap:anywhere}
+.ref-direct-panel .full-button{margin:8px 0 4px}
+.ref-direct-panel .live-swap-note{margin:9px 0 11px}
