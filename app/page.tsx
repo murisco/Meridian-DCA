@@ -203,6 +203,10 @@ export default function Home() {
   const [planSaveMessage, setPlanSaveMessage] = useState("");
   const [storageWarning, setStorageWarning] = useState("");
   const [storageReady, setStorageReady] = useState(false);
+  const [liveSwapQuote, setLiveSwapQuote] = useState<any>(null);
+  const [liveSwapStatus, setLiveSwapStatus] = useState("");
+  const [liveSwapMessage, setLiveSwapMessage] = useState("");
+  const [liveSwapPreparing, setLiveSwapPreparing] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -230,6 +234,16 @@ export default function Home() {
       active = false;
     };
   }, [network]);
+
+  useEffect(() => {
+    function handleSwapUpdate(event: Event) {
+      const detail = (event as CustomEvent<{ status?: string; message?: string }>).detail;
+      setLiveSwapStatus(detail?.status || "");
+      setLiveSwapMessage(detail?.message || "");
+    }
+    window.addEventListener("meridian:swap-update", handleSwapUpdate);
+    return () => window.removeEventListener("meridian:swap-update", handleSwapUpdate);
+  }, []);
 
   useEffect(() => {
     try {
@@ -295,6 +309,9 @@ export default function Home() {
     event.preventDefault();
     setQuoteError("");
     setQuoteResult(null);
+    setLiveSwapQuote(null);
+    setLiveSwapStatus("");
+    setLiveSwapMessage("");
     setQuoteLoading(true);
 
     try {
@@ -321,6 +338,69 @@ export default function Home() {
       setQuoteLoading(false);
     }
   }
+
+  async function prepareFirstSwap() {
+    setQuoteError("");
+    setLiveSwapPreparing(true);
+    setLiveSwapQuote(null);
+    setLiveSwapStatus("PREPARING");
+    setLiveSwapMessage("Creating a fresh executable testnet quote. No funds are moving yet.");
+    try {
+      if (network !== "testnet") throw new Error("Live swap execution is disabled on mainnet.");
+      if (!origin || !destination || origin.blockchain !== "near" || destination.blockchain !== "near") {
+        throw new Error("The first live-swap release supports NEAR testnet assets only.");
+      }
+      if (!recipient.trim() || !refundTo.trim()) throw new Error("Enter your wallet address in both recipient and refund fields.");
+      const response = await fetch("/api/swap/quote", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          originAsset: originAssetId,
+          destinationAsset: destinationAssetId,
+          network,
+          amount,
+          recipient: recipient.trim(),
+          refundTo: refundTo.trim(),
+          slippageTolerance: Number(slippage),
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Could not prepare the live testnet swap.");
+      if (data.dry !== false || !data.quote?.quote?.depositAddress) {
+        throw new Error("The provider did not return a live deposit quote. No transaction was sent.");
+      }
+      setLiveSwapQuote(data);
+      setLiveSwapStatus("PREPARED");
+      setLiveSwapMessage("Live quote ready. Review the output and quote expiry before approving the wallet transaction.");
+    } catch (error) {
+      setLiveSwapStatus("ERROR");
+      setLiveSwapMessage(error instanceof Error ? error.message : "Unable to prepare the live testnet swap.");
+    } finally {
+      setLiveSwapPreparing(false);
+    }
+  }
+
+  function approveFirstSwap() {
+    if (!liveSwapQuote || !origin || !destination) return;
+    if (Date.parse(liveSwapQuote.quote?.quote?.deadline || "") <= Date.now() + 15000) {
+      setLiveSwapQuote(null);
+      setLiveSwapStatus("EXPIRED");
+      setLiveSwapMessage("This live quote has expired. Prepare a new one before approving.");
+      return;
+    }
+    setLiveSwapStatus("AWAITING_WALLET");
+    setLiveSwapMessage("Waiting for your wallet approval. Check the token contract and NEAR deposit carefully.");
+    window.dispatchEvent(new CustomEvent("meridian:execute-swap", {
+      detail: {
+        liveQuote: liveSwapQuote.quote,
+        originAsset: liveSwapQuote.origin,
+        destinationAsset: liveSwapQuote.destination,
+        recipient: recipient.trim(),
+        refundTo: refundTo.trim(),
+      },
+    }));
+  }
+
 
   function createPlan() {
     setPlanSaveMessage("");
@@ -642,7 +722,29 @@ export default function Home() {
                 {quoteSlippageCheck && <div className={"slippage-result " + quoteSlippageCheck.status.toLowerCase()}><strong>{quoteSlippageCheck.status === "PASSED" ? "Slippage check passed" : quoteSlippageCheck.status === "BLOCKED" ? "Quote blocked" : "Slippage not verified"}</strong><p>{quoteSlippageCheck.message}</p></div>}
                 <div className="quote-warning"><b>Preview only.</b> No deposit address was generated and no funds were moved.</div>
                 <p className="fee-note">{quoteResult.feeNote}</p>
-                <button className="button button-secondary full-button" type="button" onClick={() => setQuoteResult(null)}>Clear quote</button>
+                {network === "testnet" && origin?.blockchain === "near" && destination?.blockchain === "near" && quoteSlippageCheck?.status === "PASSED" && (
+                  <div className="live-swap-panel">
+                    <p className="live-swap-note">Ready to test a real NEAR testnet swap? MERIDIAN will request a fresh executable quote, then your wallet must approve the token deposit. Tidepool is a community sandbox. Use test tokens only.</p>
+                    {!liveSwapQuote ? (
+                      <button className="button button-primary full-button" type="button" onClick={prepareFirstSwap} disabled={liveSwapPreparing}>
+                        {liveSwapPreparing ? "Preparing live swap…" : "Prepare first testnet buy"}
+                      </button>
+                    ) : (
+                      <>
+                        <div className="quote-detail"><span>Live quote output</span><strong>{liveSwapQuote.quote?.quote?.amountOutFormatted || "—"} {destination?.symbol}</strong></div>
+                        <div className="quote-detail"><span>Minimum received</span><strong>{liveSwapQuote.quote?.quote?.minAmountOut ? formatBaseUnits(liveSwapQuote.quote.quote.minAmountOut, destination?.decimals || 0) : "—"} {destination?.symbol}</strong></div>
+                        <div className="quote-detail"><span>Quote expires</span><strong>{liveSwapQuote.quote?.quote?.deadline ? formatDate(liveSwapQuote.quote.quote.deadline) : "Not provided"}</strong></div>
+                        <button className="button button-primary full-button" type="button" onClick={approveFirstSwap} disabled={["AWAITING_WALLET","DEPOSIT_SUBMITTED","PENDING","SUCCESS"].includes(liveSwapStatus)}>
+                          Approve deposit in wallet
+                        </button>
+                        <button className="button button-secondary full-button" type="button" onClick={() => { setLiveSwapQuote(null); setLiveSwapStatus(""); setLiveSwapMessage(""); }}>Discard live quote</button>
+                      </>
+                    )}
+                    {liveSwapStatus && <div className={"swap-execution-state " + (liveSwapStatus === "SUCCESS" ? "success" : liveSwapStatus === "ERROR" || liveSwapStatus === "EXPIRED" ? "error" : "")} role="status" aria-live="polite"><strong>{liveSwapStatus.replaceAll("_", " ")}</strong><span>{liveSwapMessage}</span></div>}
+                    <a className="wallet-faucet-link" href="https://app.usetidepool.tech/faucet" target="_blank" rel="noreferrer">Get Tidepool test tokens ↗</a>
+                  </div>
+                )}
+                <button className="button button-secondary full-button" type="button" onClick={() => { setQuoteResult(null); setLiveSwapQuote(null); setLiveSwapStatus(""); setLiveSwapMessage(""); }}>Clear quote</button>
               </div>
             )}
             {quoteResult && !quoteData && <div className="alert error">The quote response did not contain the expected pricing fields. Please try again.</div>}
