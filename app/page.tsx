@@ -652,7 +652,7 @@ export default function Home() {
 
           <div className="network-switcher">
             <label htmlFor="quote-network">QUOTE PREVIEW SOURCE</label>
-            <select id="quote-network" value={network} onChange={(event) => { setNetwork(event.target.value as IntentNetwork); setQuoteResult(null); setQuoteError("");   setLiveSwapStatus(""); setLiveSwapMessage(""); setAssetSearch(""); }}>
+            <select id="quote-network" value={network} onChange={(event) => { setNetwork(event.target.value as IntentNetwork); setQuoteResult(null); setQuoteError("");   setLiveSwapStatus(""); setLiveSwapMessage("");  }}>
               <option value="testnet">Testnet sandbox · Tidepool</option>
               <option value="mainnet">Mainnet · NEAR Intents 1Click</option>
             </select>
