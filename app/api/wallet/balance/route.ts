@@ -1,4 +1,4 @@
-const RPC_URL = "https://rpc.testnet.fastnear.com";
+const RPC_URL = "https://rpc.testnet.near.org";
 
 const TEST_TOKENS = [
   { symbol: "USDC", contractId: "usdc.tidepool-sandbox.testnet", decimals: 6 },
