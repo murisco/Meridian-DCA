@@ -79,6 +79,40 @@ type QuoteResult = {
 
 const PLANS_KEY = "meridian-dca-plans-v1";
 
+type SlippageAssessment = {
+  status: "PASSED" | "BLOCKED" | "UNVERIFIED";
+  message: string;
+};
+
+function assessSlippage(amountOutRaw: string | undefined, minimumOutRaw: string | undefined, limitBps: number): SlippageAssessment {
+  if (!/^\d+$/.test(amountOutRaw || "") || !/^\d+$/.test(minimumOutRaw || "")) {
+    return {
+      status: "UNVERIFIED",
+      message: "A minimum-output value was not returned, so MERIDIAN could not verify the slippage limit.",
+    };
+  }
+
+  const amountOut = BigInt(amountOutRaw!);
+  const minimumOut = BigInt(minimumOutRaw!);
+  if (amountOut <= 0n || minimumOut > amountOut || !Number.isInteger(limitBps) || limitBps < 1) {
+    return { status: "BLOCKED", message: "The quote returned output values that failed validation." };
+  }
+
+  const difference = amountOut - minimumOut;
+  const impliedSlippageBps = (difference * 10000n + amountOut - 1n) / amountOut;
+  if (impliedSlippageBps > BigInt(limitBps)) {
+    return {
+      status: "BLOCKED",
+      message: "Minimum output exceeds the maximum slippage of " + (limitBps / 100).toFixed(2) + "%.",
+    };
+  }
+
+  return {
+    status: "PASSED",
+    message: "Minimum output is within the maximum slippage of " + (limitBps / 100).toFixed(2) + "%.",
+  };
+}
+
 function nextOccurrence(frequency: Plan["frequency"]) {
   const date = new Date();
   if (frequency === "Daily") date.setDate(date.getDate() + 1);
@@ -202,6 +236,9 @@ export default function Home() {
   const origin = assets.find((asset) => asset.assetId === originAssetId);
   const destination = assets.find((asset) => asset.assetId === destinationAssetId);
   const quoteData = quoteResult?.quote?.quote || quoteResult?.quote;
+  const quoteSlippageCheck = quoteData
+    ? assessSlippage(quoteData.amountOut, quoteData.minAmountOut, Number(slippage))
+    : null;
 
   async function previewQuote(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -295,27 +332,9 @@ export default function Home() {
 
       const amountOutRaw = quoteData.amountOut || "";
       const minimumOutRaw = quoteData.minAmountOut || "";
-      let status: DryRunStatus = "UNVERIFIED";
-      let message = "Quote received, but minimum-output data was unavailable for the local slippage check.";
-
-      if (/^\d+$/.test(amountOutRaw) && /^\d+$/.test(minimumOutRaw)) {
-        const amountOut = BigInt(amountOutRaw);
-        const minimumOut = BigInt(minimumOutRaw);
-        if (amountOut > 0n && minimumOut <= amountOut) {
-          const difference = amountOut - minimumOut;
-          const impliedSlippageBps = (difference * 10000n + amountOut - 1n) / amountOut;
-          if (impliedSlippageBps <= BigInt(plan.slippage)) {
-            status = "PASSED";
-            message = "Minimum output is within the saved slippage limit of " + (plan.slippage / 100).toFixed(2) + "%.";
-          } else {
-            status = "BLOCKED";
-            message = "Quote blocked: minimum output exceeds the saved slippage limit of " + (plan.slippage / 100).toFixed(2) + "%.";
-          }
-        } else {
-          status = "BLOCKED";
-          message = "Quote blocked because its minimum output is not consistent with its expected output.";
-        }
-      }
+      const assessment = assessSlippage(amountOutRaw, minimumOutRaw, plan.slippage);
+      const status: DryRunStatus = assessment.status;
+      const message = assessment.message;
 
       const destinationDecimals = result.assets.destination.decimals ?? 0;
       const output = quoteData.amountOutFormatted || "";
@@ -540,6 +559,7 @@ export default function Home() {
                 <div className="quote-detail"><span>Estimated route time</span><strong>{typeof quoteData.timeEstimate === "number" ? Math.max(1, Math.round(quoteData.timeEstimate / 60)) + " min" : "Not provided"}</strong></div>
                 {quoteData.deadline && <div className="quote-detail"><span>Quote deadline</span><strong>{formatDate(quoteData.deadline)}</strong></div>}
                 <div className="quote-detail"><span>Quote reference</span><strong className="reference">{quoteResult.quote.correlationId ? shorten(quoteResult.quote.correlationId) : "Generated"}</strong></div>
+                {quoteSlippageCheck && <div className={"slippage-result " + quoteSlippageCheck.status.toLowerCase()}><strong>{quoteSlippageCheck.status === "PASSED" ? "Slippage check passed" : quoteSlippageCheck.status === "BLOCKED" ? "Quote blocked" : "Slippage not verified"}</strong><p>{quoteSlippageCheck.message}</p></div>}
                 <div className="quote-warning"><b>Preview only.</b> No deposit address was generated and no funds were moved.</div>
                 <p className="fee-note">{quoteResult.feeNote}</p>
                 <button className="button button-secondary full-button" type="button" onClick={() => setQuoteResult(null)}>Clear quote</button>
