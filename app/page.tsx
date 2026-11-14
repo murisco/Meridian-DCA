@@ -754,7 +754,7 @@ export default function Home() {
             <div className="field amount-field">
               <label htmlFor="amount">AMOUNT TO BUY NOW / PER BUY</label>
               <div className="input-suffix"><input id="amount" inputMode="decimal" value={amount} onChange={(event) => { setAmount(event.target.value); setQuoteResult(null); setRefRouteQuote(null); setRefRouteError(""); setLiveSwapStatus(""); setLiveSwapMessage(""); }} placeholder="Enter amount, e.g. 0.01" /><span>{origin?.symbol || "TOKEN"}</span></div>
-              <span className="field-hint">For the first Ref Finance testnet buy, enter up to 0.02 wNEAR.</span>
+              <span className="field-hint">For testnet, enter up to 3 wNEAR. The quote checks the available pool before any wallet approval.</span>
             </div>
 
             <div className="field">
