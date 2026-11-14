@@ -92,3 +92,15 @@ Track: **Unstoppable DeFi** (`defi`).
 Judges can reproduce the core demo using the hosted dashboard and the numbered **Try it** steps above. The key NEAR integration demonstrated is a real cross-chain 1Click quote using the live supported-asset catalogue, server-side quote request, route types, deadline and slippage tolerance, all in dry-run mode.
 
 The current prototype intentionally demonstrates quote generation and plan-level quote checks rather than deposits or live execution. This limitation is visible in the application and is enforced server-side.
+
+
+## Testnet sandbox mode
+
+The dashboard now defaults to **Tidepool testnet sandbox** for testing with valueless test assets. The quote-environment selector can switch between:
+
+- **Testnet sandbox — Tidepool:** loads Tidepool's testnet token catalogue and requests a `dry: true` preview from `https://www.usetidepool.tech`. This is a community-operated sandbox and is not affiliated with NEAR or Defuse. Never send real assets to it.
+- **Mainnet — NEAR Intents 1Click:** loads the official mainnet token catalogue and requests a `dry: true` quote from `https://1click.chaindefuser.com`.
+
+The connected NEAR wallet remains testnet-only. Its menu reads the native NEAR balance and the six Tidepool NEP-141 test-token balances using NEAR testnet RPC. The balance reader is read-only.
+
+**Important:** both quote modes remain preview-only in MERIDIAN. The app does not create a deposit address, request a transaction signature, transfer funds, or execute a swap. Tidepool supports end-to-end testnet swaps externally, but MERIDIAN's deposit and settlement flow is not enabled in this prototype.
