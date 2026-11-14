@@ -98,18 +98,21 @@ function assessSlippage(amountOutRaw: string | undefined, minimumOutRaw: string 
     return { status: "BLOCKED", message: "The quote returned output values that failed validation." };
   }
 
-  const difference = amountOut - minimumOut;
-  const impliedSlippageBps = (difference * 10000n + amountOut - 1n) / amountOut;
-  if (impliedSlippageBps > BigInt(limitBps)) {
+  // 1Click returns integer base units. Its minimum output is rounded down
+  // to the destination token's smallest unit, so compare against the
+  // floored allowed minimum rather than reverse-calculating a rounded-up
+  // percentage from amountOut/minAmountOut.
+  const expectedMinimumOut = (amountOut * BigInt(10000 - limitBps)) / 10000n;
+  if (minimumOut < expectedMinimumOut) {
     return {
       status: "BLOCKED",
-      message: "Minimum output exceeds the maximum slippage of " + (limitBps / 100).toFixed(2) + "%.",
+      message: "Minimum output is below the 1Click minimum permitted by the " + (limitBps / 100).toFixed(2) + "% slippage limit.",
     };
   }
 
   return {
     status: "PASSED",
-    message: "Minimum output is within the maximum slippage of " + (limitBps / 100).toFixed(2) + "%.",
+    message: "1Click minimum output satisfies the " + (limitBps / 100).toFixed(2) + "% slippage limit after base-unit rounding.",
   };
 }
 
