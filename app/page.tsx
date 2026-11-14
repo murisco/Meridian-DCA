@@ -147,6 +147,23 @@ function formatBaseUnits(value: string, decimals: number) {
   }
 }
 
+function validatePlanAmount(value: string, decimals: number) {
+  const normalized = value.trim();
+  if (!/^(?:0|[1-9]\\d*)(?:\\.\\d+)?$/.test(normalized)) {
+    throw new Error("Enter a valid positive amount without commas or scientific notation.");
+  }
+  const [whole, fraction = ""] = normalized.split(".");
+  if (fraction.length > decimals) {
+    throw new Error("This token supports up to " + decimals + " decimal places.");
+  }
+  const scale = 10n ** BigInt(decimals);
+  const fractionalUnits = BigInt((fraction + "0".repeat(decimals)).slice(0, decimals) || "0");
+  if (BigInt(whole) * scale + fractionalUnits <= 0n) {
+    throw new Error("Amount must be greater than zero.");
+  }
+}
+
+
 export default function Home() {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [assetsLoading, setAssetsLoading] = useState(true);
@@ -276,7 +293,7 @@ export default function Home() {
       return;
     }
     try {
-      toBaseUnits(amount, origin.decimals);
+      validatePlanAmount(amount, origin.decimals);
     } catch (error) {
       setQuoteError(error instanceof Error ? error.message : "Enter a valid amount for the selected token.");
       return;
