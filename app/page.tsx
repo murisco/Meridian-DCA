@@ -701,7 +701,7 @@ export default function Home() {
             <div className="field amount-field">
               <label htmlFor="amount">AMOUNT TO BUY NOW / PER BUY</label>
               <div className="input-suffix"><input id="amount" inputMode="decimal" value={amount} onChange={(event) => { setAmount(event.target.value); setQuoteResult(null);   setLiveSwapStatus(""); setLiveSwapMessage(""); }} placeholder="Enter amount, e.g. 0.01" /><span>{origin?.symbol || "TOKEN"}</span></div>
-              <span className="field-hint">For testnet, enter up to 3 wNEAR. The quote checks the available pool before any wallet approval.</span>
+              <span className="field-hint">For testnet, enter an amount for the selected NEAR source token. The live route will show the selected destination asset and network before you approve.</span>
             </div>
 
             <div className="field">
@@ -723,7 +723,7 @@ export default function Home() {
 
             {network === "testnet" && (
             <div className="ref-direct-panel investment-buy-panel">
-              <div className="ref-direct-heading"><strong>MAKE YOUR FIRST BUY NOW</strong><span>NEAR INTENTS · TESTNET</span></div>
+              <div className="ref-direct-heading"><strong>MAKE YOUR FIRST BUY NOW</strong><span>TIDEPOOL CROSS-CHAIN · TESTNET</span></div>
               <p className="live-swap-note">This purchase uses the exact assets selected above. Your NEAR wallet approves the source-token deposit; Tidepool routes the payout to the destination chain. Testnet assets have no monetary value.</p>
               <div className="quote-detail"><span>Swap pair</span><strong>{origin?.symbol || "Choose source"} → {destination?.symbol || "Choose destination"}</strong></div>
               <div className="quote-detail"><span>Source network</span><strong>{origin?.blockchain.toUpperCase() || "—"}</strong></div>
