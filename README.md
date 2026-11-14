@@ -115,3 +115,6 @@ The hackathon prompt describes a cross-chain DCA vault that executes a user-auth
 See the official track prompt: https://github.com/nearai/near-hackathon-prompt-examples/blob/main/tracks/01-defi.md
 
 See the current event instructions: https://nearhackathon.com/HACKATHON.md
+## Verified demo run
+
+On 14 November 2026, a manual wallet-approved testnet run used 0.1 Tidepool wNEAR on NEAR testnet and selected ETH on an Ethereum test network. The app displayed Tidepool's successful cross-chain payout confirmation. This is evidence of the one-time testnet path only; it is not evidence of unattended recurring execution.
