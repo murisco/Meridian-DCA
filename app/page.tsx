@@ -327,7 +327,16 @@ export default function Home() {
       nextRunAt: nextOccurrence(frequency),
       createdAt: new Date().toISOString(),
     };
-    setPlans((current) => [newPlan, ...current]);
+    const nextPlans = [newPlan, ...plans];
+    try {
+      window.localStorage.setItem(PLANS_KEY, JSON.stringify(nextPlans));
+    } catch {
+      setStorageWarning("This browser could not save the plan to local storage. Check browser privacy settings and try again.");
+      setQuoteError("Plan was not saved. Your browser blocked local storage.");
+      return;
+    }
+    setStorageWarning("");
+    setPlans(nextPlans);
     setQuoteError("");
     setPlanSaveMessage("Saved " + newPlan.sourceSymbol + " → " + newPlan.destinationSymbol + " · " + newPlan.amount + " " + newPlan.sourceSymbol + " · " + newPlan.frequency.toLowerCase() + ". This is a local reminder, not an automated purchase.");
   }
