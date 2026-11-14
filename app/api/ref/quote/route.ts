@@ -76,7 +76,7 @@ function parsePositiveAmount(value: unknown) {
   const [whole, fraction = ""] = amount.split(".");
   const raw = BigInt(whole) * ONE + BigInt((fraction + "0".repeat(24)).slice(0, 24));
   if (raw <= 0n) throw new Error("Amount must be greater than zero.");
-  if (raw > 20000000000000000000000n) throw new Error("For this first test, the maximum swap size is 0.02 wNEAR.");
+  if (raw > 3000000000000000000000000n) throw new Error("For this test, the maximum swap size is 3 wNEAR.");
   return raw.toString();
 }
 
