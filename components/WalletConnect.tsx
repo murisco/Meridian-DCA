@@ -42,6 +42,7 @@ type RefSwapExecutionPayload = {
   amountIn: string;
   minimumOut: string;
   poolId: string;
+  protocol?: "ref-v1" | "ref-dcl-v2";
   inputRegistered: boolean;
   outputRegistered: boolean;
   outputStorageMinimum: string;
@@ -178,11 +179,16 @@ export default function WalletConnect() {
       try {
         if (!accountId || !connectorRef.current) throw new Error("Connect your NEAR testnet wallet before swapping.");
         if (payload.accountId !== accountId) throw new Error("The route account does not match the connected wallet.");
-        if (payload.poolId !== "wbtc.fakes.testnet|wrap.testnet|100" &&
+        const swapProtocol = payload.protocol || "ref-dcl-v2";
+        if (swapProtocol === "ref-v1") {
+          if (!/^\\d{1,12}$/.test(payload.poolId)) {
+            throw new Error("The Ref Finance classic pool ID is invalid.");
+          }
+        } else if (payload.poolId !== "wbtc.fakes.testnet|wrap.testnet|100" &&
             payload.poolId !== "wbtc.fakes.testnet|wrap.testnet|400" &&
             payload.poolId !== "wbtc.fakes.testnet|wrap.testnet|2000" &&
             payload.poolId !== "wbtc.fakes.testnet|wrap.testnet|10000") {
-          throw new Error("The Ref Finance pool ID is not an approved wNEAR/WBTC testnet route.");
+          throw new Error("The Ref Finance DCL pool ID is not an approved wNEAR/WBTC testnet route.");
         }
         if (!/^\d+$/.test(payload.amountIn) || !/^\d+$/.test(payload.minimumOut) ||
             !/^\d+$/.test(payload.outputStorageMinimum)) {
@@ -226,7 +232,27 @@ export default function WalletConnect() {
           if (registrationResult?.status?.Failure) throw new Error("WBTC storage registration failed: " + JSON.stringify(registrationResult.status.Failure));
         }
 
-        publishSwapUpdate("AWAITING_WALLET", "Review the Ref Finance swap request. It sends only the exact quoted wNEAR amount from wrap.testnet.");
+        publishSwapUpdate("AWAITING_WALLET", "Review the Ref Finance " + (swapProtocol === "ref-v1" ? "classic pool" : "DCL") + " swap. It sends only the exact quoted wNEAR amount from wrap.testnet.");
+        const swapMessage = swapProtocol === "ref-v1"
+          ? JSON.stringify({
+              force: 0,
+              actions: [{
+                pool_id: Number(payload.poolId),
+                token_in: "wrap.testnet",
+                token_out: "wbtc.fakes.testnet",
+                amount_in: payload.amountIn,
+                min_amount_out: payload.minimumOut,
+              }],
+            })
+          : JSON.stringify({
+              Swap: {
+                pool_ids: [payload.poolId],
+                output_token: "wbtc.fakes.testnet",
+                min_output_amount: payload.minimumOut,
+                referral_id: "",
+                client_id: "",
+              },
+            });
         const swapResult = await wallet.signAndSendTransaction({
           receiverId: "wrap.testnet",
           actions: [{
@@ -234,19 +260,11 @@ export default function WalletConnect() {
             params: {
               methodName: "ft_transfer_call",
               args: {
-                receiver_id: "dclv2.ref-dev.testnet",
+                receiver_id: swapProtocol === "ref-v1" ? "ref-finance-101.testnet" : "dclv2.ref-dev.testnet",
                 amount: payload.amountIn,
-                msg: JSON.stringify({
-                  Swap: {
-                    pool_ids: [payload.poolId],
-                    output_token: "wbtc.fakes.testnet",
-                    min_output_amount: payload.minimumOut,
-                    referral_id: "",
-                    client_id: "",
-                  },
-                }),
+                msg: swapMessage,
               },
-              gas: "180000000000000",
+              gas: swapProtocol === "ref-v1" ? "300000000000000" : "180000000000000",
               deposit: "1",
             },
           }],
@@ -256,10 +274,13 @@ export default function WalletConnect() {
           transaction?: { hash?: string };
           transaction_outcome?: { id?: string };
         } | undefined;
-        if (outcome?.status?.Failure) throw new Error("Ref Finance swap transaction failed: " + JSON.stringify(outcome.status.Failure));
+        const nestedFailure = (outcome as any)?.transaction_outcome?.outcome?.status?.Failure ||
+          (outcome as any)?.status?.Failure ||
+          (outcome as any)?.transaction?.outcome?.status?.Failure;
+        if (nestedFailure) throw new Error("Ref Finance swap transaction failed: " + JSON.stringify(nestedFailure));
 
         const txHash = outcome?.transaction?.hash || outcome?.transaction_outcome?.id || "";
-        publishSwapUpdate("SUBMITTED", "The Ref Finance swap was submitted. Waiting for the WBTC balance to update.", { txHash });
+        publishSwapUpdate("SUBMITTED", "The Ref Finance swap was submitted. Waiting for the WBTC balance to update.", { txHash, protocol: swapProtocol });
         for (let attempt = 0; attempt < 12; attempt += 1) {
           await new Promise((resolve) => window.setTimeout(resolve, 2000));
           const response = await fetch("/api/wallet/balance?accountId=" + encodeURIComponent(accountId), { cache: "no-store" });
@@ -277,7 +298,8 @@ export default function WalletConnect() {
         }
         publishSwapUpdate("PENDING", "The transaction was submitted but the WBTC balance increase is not confirmed yet. Do not send it again. Check the transaction and refresh your wallet before retrying.", { txHash });
       } catch (cause) {
-        publishSwapUpdate("ERROR", cause instanceof Error ? cause.message : "The Ref Finance swap failed or was cancelled.");
+        const message = cause instanceof Error ? cause.message : JSON.stringify(cause) || "The Ref Finance swap failed or was cancelled.";
+        publishSwapUpdate("ERROR", message);
       } finally {
         setRefSwapBusy(false);
       }
