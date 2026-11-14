@@ -724,7 +724,7 @@ export default function Home() {
                 <p className="fee-note">{quoteResult.feeNote}</p>
                 {network === "testnet" && origin?.blockchain === "near" && destination?.blockchain === "near" && quoteSlippageCheck?.status === "PASSED" && (
                   <div className="live-swap-panel">
-                    <p className="live-swap-note">Ready to test a real NEAR testnet swap? MERIDIAN will request a fresh executable quote, then your wallet must approve the token deposit. Tidepool is a community sandbox. Use test tokens only.</p>
+                    <p className="live-swap-note">Ready to test a real NEAR testnet swap? MERIDIAN requests a fresh executable quote, then your wallet approves the token deposit. Tidepool is community-operated and its quote deposit accounts are managed by Tidepool. Use only worthless test tokens, never real assets. Claim the Tidepool wallet-mode tokens first.</p>
                     {!liveSwapQuote ? (
                       <button className="button button-primary full-button" type="button" onClick={prepareFirstSwap} disabled={liveSwapPreparing}>
                         {liveSwapPreparing ? "Preparing live swap…" : "Prepare first testnet buy"}
