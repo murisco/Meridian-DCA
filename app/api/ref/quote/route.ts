@@ -185,3 +185,52 @@ export async function POST(request: Request) {
     return Response.json({ available: false, error: message }, { status: 502 });
   }
 }
+
+export async function GET() {
+  const checks = await Promise.all([
+    { step: "wNEAR metadata", contract: INPUT_TOKEN, method: "ft_metadata", args: {} },
+    { step: "WBTC metadata", contract: OUTPUT_TOKEN, method: "ft_metadata", args: {} },
+    { step: "WBTC storage bounds", contract: OUTPUT_TOKEN, method: "storage_balance_bounds", args: {} },
+    { step: "Ref Finance DCL pool list", contract: REF_DCL_CONTRACT, method: "list_pools", args: {} },
+  ].map(async (item) => {
+    try {
+      const data = await view(item.contract, item.method, item.args);
+      if (item.method === "list_pools") {
+        if (!Array.isArray(data)) throw new Error("Expected a pool array from list_pools.");
+        const matchingPools = data.filter((pool: any) =>
+          (pool.token_x === INPUT_TOKEN && pool.token_y === OUTPUT_TOKEN ||
+           pool.token_x === OUTPUT_TOKEN && pool.token_y === INPUT_TOKEN) &&
+          pool.state === "Running"
+        );
+        return {
+          step: item.step,
+          ok: true,
+          poolCount: data.length,
+          matchingPoolCount: matchingPools.length,
+          matchingPools: matchingPools.map((pool: any) => ({
+            poolId: pool.pool_id,
+            fee: pool.fee,
+            state: pool.state,
+            liquidity: pool.liquidity,
+            totalX: pool.total_x,
+            totalY: pool.total_y,
+          })),
+        };
+      }
+      return { step: item.step, ok: true, data };
+    } catch (error) {
+      return {
+        step: item.step,
+        ok: false,
+        error: error instanceof Error ? error.message : "Unknown contract read error.",
+      };
+    }
+  }));
+
+  return Response.json({
+    network: "testnet",
+    rpc: RPC_URL,
+    checks,
+    checkedAt: new Date().toISOString(),
+  }, { headers: { "Cache-Control": "no-store" } });
+}
