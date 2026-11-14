@@ -8,7 +8,7 @@ type WalletBalance = {
   nearRaw: string;
   wrapNear: { balance: string; rawBalance: string; contractId: string };
   wrapRegistered: boolean;
-  tokens: { symbol: string; balance: string; decimals: number }[];
+  tokens: { symbol: string; contractId: string; balance: string; rawBalance: string; decimals: number }[];
   updatedAt: string;
 };
 
@@ -16,6 +16,23 @@ const WRAP_CONTRACT_ID = "wrap.testnet";
 const WRAP_AMOUNT_RAW = "20000000000000000000000"; // exactly 0.02 NEAR
 const STORAGE_DEPOSIT_RAW = "1250000000000000000000"; // 0.00125 NEAR
 const FUNCTION_CALL_GAS = "30000000000000"; // 30 Tgas
+
+type SwapExecutionPayload = {
+  liveQuote: {
+    correlationId?: string;
+    quote?: { depositAddress?: string; amountIn?: string; deadline?: string };
+  };
+  originAsset: { assetId: string; contractAddress: string; symbol: string };
+  destinationAsset: { assetId: string; contractAddress: string; symbol: string };
+  recipient: string;
+  refundTo: string;
+};
+
+function publishSwapUpdate(status: string, message: string, extra: Record<string, unknown> = {}) {
+  window.dispatchEvent(new CustomEvent("meridian:swap-update", {
+    detail: { status, message, ...extra },
+  }));
+}
 
 export default function WalletConnect() {
   const connectorRef = useRef<NearConnectorType | null>(null);
@@ -31,6 +48,7 @@ export default function WalletConnect() {
   const [wrapBusy, setWrapBusy] = useState(false);
   const [wrapMessage, setWrapMessage] = useState("");
   const [wrapError, setWrapError] = useState("");
+  const [swapBusy, setSwapBusy] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -115,6 +133,131 @@ export default function WalletConnect() {
       active = false;
     };
   }, [accountId, balanceRefresh]);
+
+  useEffect(() => {
+    async function handleSwap(event: Event) {
+      const payload = (event as CustomEvent<SwapExecutionPayload>).detail;
+      if (!payload || swapBusy) return;
+
+      const depositAddress = payload.liveQuote?.quote?.depositAddress || "";
+      const amountIn = payload.liveQuote?.quote?.amountIn || "";
+      const deadline = payload.liveQuote?.quote?.deadline || "";
+      const originContract = payload.originAsset?.contractAddress || "";
+      const destinationContract = payload.destinationAsset?.contractAddress || "";
+
+      try {
+        if (!accountId || !connectorRef.current) throw new Error("Connect your NEAR testnet wallet before executing the swap.");
+        if (payload.recipient !== accountId || payload.refundTo !== accountId) {
+          throw new Error("The recipient and refund addresses must both match your connected wallet.");
+        }
+        if (!/^[0-9a-f]{64}$/i.test(depositAddress) || !/^\\d+$/.test(amountIn)) {
+          throw new Error("The live quote is missing a valid deposit address or exact input amount.");
+        }
+        if (!originContract || !destinationContract || payload.originAsset.assetId === payload.destinationAsset.assetId) {
+          throw new Error("The selected token contracts are not valid for this testnet swap.");
+        }
+        if (deadline && Date.parse(deadline) <= Date.now() + 15000) {
+          throw new Error("This quote is expired or too close to expiry. Request a fresh quote.");
+        }
+        if (!balance) throw new Error("Wallet balances are not loaded. Refresh your wallet balance and try again.");
+
+        const source = balance.tokens.find((token) => token.contractId === originContract);
+        const destination = balance.tokens.find((token) => token.contractId === destinationContract);
+        if (!source || BigInt(source.rawBalance) < BigInt(amountIn)) {
+          throw new Error("Your wallet does not have enough Tidepool " + payload.originAsset.symbol + ". The wNEAR on wrap.testnet is a different token. Claim Tidepool wallet-mode test tokens first.");
+        }
+        if (!destination) {
+          throw new Error("Your wallet is not yet registered for Tidepool " + payload.destinationAsset.symbol + ". Claim the Tidepool faucet in wallet mode so the destination token is registered before swapping.");
+        }
+
+        const minimumReserve = 20000000000000000000000n; // keep at least 0.02 NEAR for gas
+        const storageDeposit = 1250000000000000000000n; // Tidepool NEP-141 registration deposit
+        if (BigInt(balance.nearRaw) < minimumReserve + storageDeposit) {
+          throw new Error("Keep at least 0.02 NEAR plus the 0.00125 NEAR deposit-account registration amount in your wallet for this testnet swap.");
+        }
+
+        setSwapBusy(true);
+        publishSwapUpdate("AWAITING_WALLET", "Review the wallet request. It registers the quote deposit account and transfers exactly " + source.balance + " or less? " + payload.originAsset.symbol + " to Tidepool.");
+        const wallet = await connectorRef.current.wallet();
+        const actions = [
+          {
+            type: "FunctionCall" as const,
+            params: {
+              methodName: "storage_deposit",
+              args: { account_id: depositAddress, registration_only: true },
+              gas: FUNCTION_CALL_GAS,
+              deposit: storageDeposit.toString(),
+            },
+          },
+          {
+            type: "FunctionCall" as const,
+            params: {
+              methodName: "ft_transfer",
+              args: { receiver_id: depositAddress, amount: amountIn, memo: "MERIDIAN DCA first purchase" },
+              gas: FUNCTION_CALL_GAS,
+              deposit: "1",
+            },
+          },
+        ];
+
+        const result = await wallet.signAndSendTransaction({ receiverId: originContract, actions });
+        const outcome = result as unknown as {
+          status?: { Failure?: unknown };
+          transaction?: { hash?: string };
+          transaction_outcome?: { id?: string };
+        } | undefined;
+        if (outcome?.status?.Failure) {
+          throw new Error("The token deposit transaction failed: " + JSON.stringify(outcome.status.Failure));
+        }
+
+        const txHash = outcome?.transaction?.hash || outcome?.transaction_outcome?.id || "";
+        publishSwapUpdate("DEPOSIT_SUBMITTED", "Wallet submitted the testnet deposit. MERIDIAN is checking the swap settlement.", { txHash, depositAddress });
+
+        if (txHash) {
+          await fetch("/api/swap/submit", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ depositAddress, txHash }),
+          }).catch(() => null);
+        }
+
+        for (let attempt = 0; attempt < 24; attempt += 1) {
+          const response = await fetch("/api/swap/status?depositAddress=" + encodeURIComponent(depositAddress), { cache: "no-store" });
+          const statusData = await response.json();
+          if (!response.ok) throw new Error(statusData.error || "Could not retrieve Tidepool swap status.");
+          const status = typeof statusData.status === "string" ? statusData.status : "PROCESSING";
+          publishSwapUpdate(status, "Tidepool swap status: " + status.replaceAll("_", " ").toLowerCase() + ".", {
+            txHash,
+            depositAddress,
+            correlationId: payload.liveQuote.correlationId,
+            statusData,
+          });
+          if (status === "SUCCESS") {
+            publishSwapUpdate("SUCCESS", "Swap confirmed by Tidepool. Your " + payload.destinationAsset.symbol + " payout has completed.", {
+              txHash, depositAddress, correlationId: payload.liveQuote.correlationId, statusData,
+            });
+            setBalanceRefresh((value) => value + 1);
+            return;
+          }
+          if (["REFUNDED", "FAILED", "EXPIRED", "INCOMPLETE_DEPOSIT", "REFUNDING_FAILED"].includes(status)) {
+            throw new Error("Tidepool ended the swap with status " + status + ". Check the transaction details before trying again.");
+          }
+          await new Promise((resolve) => window.setTimeout(resolve, 2500));
+        }
+        publishSwapUpdate("PENDING", "The deposit was sent, but settlement is still pending. Do not send it again. Check the swap status before retrying.", {
+          txHash, depositAddress, correlationId: payload.liveQuote.correlationId,
+        });
+      } catch (cause) {
+        const message = cause instanceof Error ? cause.message : "The testnet swap was cancelled or failed.";
+        publishSwapUpdate("ERROR", message);
+      } finally {
+        setSwapBusy(false);
+      }
+    }
+
+    window.addEventListener("meridian:execute-swap", handleSwap);
+    return () => window.removeEventListener("meridian:execute-swap", handleSwap);
+  }, [accountId, balance, swapBusy]);
 
   async function wrapNear() {
     if (!accountId || wrapBusy) return;
