@@ -105,7 +105,7 @@ export async function POST(request: Request) {
     if (inputMeta.decimals !== 24 || outputMeta.decimals !== 8) {
       throw new Error("Ref Finance testnet token metadata did not match the expected wNEAR/WBTC decimals.");
     }
-    if (typeof outputBounds?.min !== "string" || !/^\\d+$/.test(outputBounds.min)) {
+    if (typeof outputBounds?.min !== "string" || !/^\d+$/.test(outputBounds.min)) {
       throw new Error("Ref Finance did not return a valid WBTC storage-registration minimum.");
     }
 
@@ -140,7 +140,7 @@ export async function POST(request: Request) {
           input_amount: amountIn,
           tag: "meridian-dca-" + item.fee + "-" + amountIn,
         });
-        if (!quote || !/^\\d+$/.test(String(quote.amount || "")) || BigInt(quote.amount) <= 0n) return null;
+        if (!quote || !/^\d+$/.test(String(quote.amount || "")) || BigInt(quote.amount) <= 0n) return null;
         const minimumOut = (BigInt(quote.amount) * BigInt(10000 - slippageBps) / 10000n).toString();
         return {
           poolId: item.poolId,
@@ -158,7 +158,7 @@ export async function POST(request: Request) {
       }
     }));
 
-    const validQuotes = quotes.filter((quote): quote is NonNullable<typeof quote> => quote !== null)
+    const validQuotes = quoteChecks.filter((quote): quote is NonNullable<typeof quote> => quote !== null)
       .sort((a, b) => BigInt(a.amountOut) > BigInt(b.amountOut) ? -1 : BigInt(a.amountOut) < BigInt(b.amountOut) ? 1 : 0);
 
     if (!validQuotes.length) {
@@ -200,49 +200,51 @@ export async function POST(request: Request) {
 }
 
 export async function GET() {
+  const feeTiers = [100, 400, 2000, 10000];
+  const poolChecks = await Promise.all(feeTiers.map(async (fee) => {
+    const poolId = [INPUT_TOKEN, OUTPUT_TOKEN].sort().join("|") + "|" + fee;
+    try {
+      const pool = await view(REF_DCL_CONTRACT, "get_pool", { pool_id: poolId });
+      return {
+        fee,
+        poolId,
+        ok: !!pool,
+        pool: pool ? {
+          state: pool.state || null,
+          liquidity: pool.liquidity || null,
+          totalX: pool.total_x || null,
+          totalY: pool.total_y || null,
+        } : null,
+      };
+    } catch (error) {
+      return {
+        fee,
+        poolId,
+        ok: false,
+        error: error instanceof Error ? error.message : "Pool view failed.",
+      };
+    }
+  }));
   const checks = await Promise.all([
     { step: "wNEAR metadata", contract: INPUT_TOKEN, method: "ft_metadata", args: {} },
     { step: "WBTC metadata", contract: OUTPUT_TOKEN, method: "ft_metadata", args: {} },
     { step: "WBTC storage bounds", contract: OUTPUT_TOKEN, method: "storage_balance_bounds", args: {} },
-    { step: "Ref Finance DCL pool list", contract: REF_DCL_CONTRACT, method: "list_pools", args: {} },
   ].map(async (item) => {
     try {
-      const data = await view(item.contract, item.method, item.args);
-      if (item.method === "list_pools") {
-        if (!Array.isArray(data)) throw new Error("Expected a pool array from list_pools.");
-        const matchingPools = data.filter((pool: any) =>
-          (pool.token_x === INPUT_TOKEN && pool.token_y === OUTPUT_TOKEN ||
-           pool.token_x === OUTPUT_TOKEN && pool.token_y === INPUT_TOKEN) &&
-          pool.state === "Running"
-        );
-        return {
-          step: item.step,
-          ok: true,
-          poolCount: data.length,
-          matchingPoolCount: matchingPools.length,
-          matchingPools: matchingPools.map((pool: any) => ({
-            poolId: pool.pool_id,
-            fee: pool.fee,
-            state: pool.state,
-            liquidity: pool.liquidity,
-            totalX: pool.total_x,
-            totalY: pool.total_y,
-          })),
-        };
-      }
-      return { step: item.step, ok: true, data };
+      return { step: item.step, ok: true, data: await view(item.contract, item.method, item.args) };
     } catch (error) {
       return {
         step: item.step,
         ok: false,
-        error: error instanceof Error ? error.message : "Unknown contract read error.",
+        error: error instanceof Error ? error.message : "Unknown contract view error.",
       };
     }
   }));
-
   return Response.json({
     network: "testnet",
     rpc: RPC_URL,
+    dclContract: REF_DCL_CONTRACT,
+    poolChecks,
     checks,
     checkedAt: new Date().toISOString(),
   }, { headers: { "Cache-Control": "no-store" } });
