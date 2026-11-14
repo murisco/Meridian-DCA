@@ -38,7 +38,7 @@ export async function fetchIntentTokens(): Promise<IntentToken[]> {
 
 export function toBaseUnits(value: string, decimals: number): string {
   const normalized = value.trim();
-  if (!/^(?:0|[1-9]\\d*)(?:\\.\\d+)?$/.test(normalized)) {
+  if (!/^(?:0|[1-9]\d*)(?:\.\d+)?$/.test(normalized)) {
     throw new Error("Enter a valid positive amount without commas or scientific notation.");
   }
 
