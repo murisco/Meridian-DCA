@@ -441,7 +441,7 @@ export default function Home() {
       return;
     }
     setLiveSwapStatus("AWAITING_WALLET");
-    setLiveSwapMessage("Waiting for your wallet to approve the WBTC registration (if needed) and swap.");
+    setLiveSwapMessage("Waiting for your wallet to approve the USDT.e registration (if needed) and swap.");
     window.dispatchEvent(new CustomEvent("meridian:execute-ref-swap", {
       detail: {
         accountId: refRouteQuote.accountId,
@@ -533,7 +533,7 @@ export default function Home() {
     setCheckingPlanId(plan.id);
 
     try {
-      if (plan.network === "testnet" && plan.sourceAssetId === "wrap.testnet" && plan.destinationAssetId === "wbtc.fakes.testnet") {
+      if (plan.network === "testnet" && plan.sourceAssetId === "wrap.testnet" && plan.destinationAssetId === "usdt.fakes.testnet") {
         const response = await fetch("/api/ref/quote", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -553,8 +553,8 @@ export default function Home() {
             checkedAt: new Date().toISOString(),
             status: assessment.status,
             message: "Ref Finance testnet · " + assessment.message,
-            output: quote.amountOutFormatted + " WBTC",
-            minimumOutput: formatBaseUnits(quote.minimumOut, 8) + " WBTC",
+            output: quote.amountOutFormatted + " USDT.e",
+            minimumOutput: formatBaseUnits(quote.minimumOut, 6) + " USDT.e",
             quoteReference: quote.poolId,
           },
         } : item));
@@ -724,7 +724,7 @@ export default function Home() {
               <option value="testnet">Testnet sandbox · Tidepool</option>
               <option value="mainnet">Mainnet · NEAR Intents 1Click</option>
             </select>
-            <span>{network === "testnet" ? "Tidepool is used for quote previews. Your immediate wNEAR → WBTC purchase uses Ref Finance below." : "Official 1Click mainnet · dry-run quote only · no funds moved"}</span>
+            <span>{network === "testnet" ? "Tidepool is used for quote previews. Your immediate wNEAR → USDT.e purchase uses the verified Ref Finance pool below." : "Official 1Click mainnet · dry-run quote only · no funds moved"}</span>
           </div>
 
           {assetError && <div className="alert error">{assetError} <button type="button" onClick={() => window.location.reload()}>Retry</button></div>}
