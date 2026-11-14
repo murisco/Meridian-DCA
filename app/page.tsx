@@ -3,6 +3,8 @@
 import { FormEvent, useEffect, useLayoutEffect, useMemo, useState } from "react";
 import WalletConnect from "@/components/WalletConnect";
 
+type IntentNetwork = "mainnet" | "testnet";
+
 type Asset = {
   assetId: string;
   decimals: number;
@@ -26,6 +28,7 @@ type Plan = {
   recipient: string;
   refundTo: string;
   frequency: "Daily" | "Weekly" | "Monthly";
+  network?: IntentNetwork;
   slippage: number;
   nextRunAt: string;
   createdAt: string;
@@ -42,6 +45,8 @@ type Plan = {
 
 type QuoteResult = {
   dry: boolean;
+  network?: IntentNetwork;
+  provider?: string;
   quote: {
     correlationId?: string;
     quote?: {
@@ -178,6 +183,7 @@ export default function Home() {
     window.scrollTo(0, 0);
   }, []);
 
+  const [network, setNetwork] = useState<IntentNetwork>("testnet");
   const [assets, setAssets] = useState<Asset[]>([]);
   const [assetsLoading, setAssetsLoading] = useState(true);
   const [assetError, setAssetError] = useState("");
@@ -200,7 +206,10 @@ export default function Home() {
 
   useEffect(() => {
     let active = true;
-    fetch("/api/tokens")
+    setAssetsLoading(true);
+    setAssetError("");
+    setQuoteResult(null);
+    fetch("/api/tokens?network=" + network)
       .then(async (response) => {
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || "Unable to load supported assets.");
@@ -217,6 +226,12 @@ export default function Home() {
         setAssetsLoading(false);
       });
 
+    return () => {
+      active = false;
+    };
+  }, [network]);
+
+  useEffect(() => {
     try {
       const saved = window.localStorage.getItem(PLANS_KEY);
       if (saved) {
@@ -227,10 +242,6 @@ export default function Home() {
       setPlans([]);
     }
     setStorageReady(true);
-
-    return () => {
-      active = false;
-    };
   }, []);
 
   useEffect(() => {
@@ -241,13 +252,15 @@ export default function Home() {
     }
     if (!destinationAssetId || !assets.some((asset) => asset.assetId === destinationAssetId)) {
       const preferred =
+        (network === "testnet" && assets.find((asset) => asset.symbol.toUpperCase() === "WBTC")) ||
         assets.find((asset) => asset.symbol.toUpperCase() === "BTC") ||
+        assets.find((asset) => asset.symbol.toUpperCase() === "WNEAR") ||
         assets.find((asset) => asset.symbol.toUpperCase() === "NEAR") ||
         assets.find((asset) => asset.symbol.toUpperCase() === "ETH") ||
         assets.find((asset) => asset.assetId !== originAssetId);
       if (preferred) setDestinationAssetId(preferred.assetId);
     }
-  }, [assets, originAssetId, destinationAssetId]);
+  }, [assets, originAssetId, destinationAssetId, network]);
 
   useEffect(() => {
     if (!storageReady) return;
@@ -291,6 +304,7 @@ export default function Home() {
         body: JSON.stringify({
           originAsset: originAssetId,
           destinationAsset: destinationAssetId,
+          network,
           amount,
           recipient,
           refundTo,
@@ -333,6 +347,7 @@ export default function Home() {
       recipient: recipient.trim(),
       refundTo: refundTo.trim(),
       frequency,
+      network,
       slippage: Number(slippage),
       nextRunAt: nextOccurrence(frequency),
       createdAt: new Date().toISOString(),
@@ -366,6 +381,7 @@ export default function Home() {
         body: JSON.stringify({
           originAsset: plan.sourceAssetId,
           destinationAsset: plan.destinationAssetId,
+          network: plan.network || "mainnet",
           amount: plan.amount,
           recipient: plan.recipient,
           refundTo: plan.refundTo,
@@ -483,7 +499,7 @@ export default function Home() {
       <section className="asset-strip" id="markets">
         <div className="asset-strip-heading">
           <strong>SUPPORTED ASSET UNIVERSE</strong>
-          <span>{assetsLoading ? "SYNCING WITH NEAR INTENTS…" : assets.length.toLocaleString() + " ASSETS · 1CLICK API"}</span>
+          <span>{assetsLoading ? "SYNCING ASSET FEED…" : assets.length.toLocaleString() + " ASSETS · " + (network === "testnet" ? "TIDEPOOL TESTNET" : "1CLICK MAINNET")}</span>
         </div>
         <div className="asset-ticker">
           {assets.slice(0, 12).map((asset) => (
@@ -514,6 +530,15 @@ export default function Home() {
           <div className="card-heading">
             <div><span className="step-number">01</span><h3>Investment details</h3></div>
             <span className="card-caption">PLAN YOUR NEXT BUY</span>
+          </div>
+
+          <div className="network-switcher">
+            <label htmlFor="quote-network">QUOTE ENVIRONMENT</label>
+            <select id="quote-network" value={network} onChange={(event) => { setNetwork(event.target.value as IntentNetwork); setQuoteResult(null); setQuoteError(""); setAssetSearch(""); }}>
+              <option value="testnet">Testnet sandbox · Tidepool</option>
+              <option value="mainnet">Mainnet · NEAR Intents 1Click</option>
+            </select>
+            <span>{network === "testnet" ? "Free test assets · community sandbox · no real value" : "Official 1Click mainnet · dry-run quote only · no funds moved"}</span>
           </div>
 
           {assetError && <div className="alert error">{assetError} <button type="button" onClick={() => window.location.reload()}>Retry</button></div>}
@@ -590,7 +615,7 @@ export default function Home() {
           <div className="quote-card">
             <div className="card-heading">
               <div><span className="step-number">02</span><h3>Quote preview</h3></div>
-              <span className="live-tag"><span className="pulse-dot" /> NEAR INTENTS</span>
+              <span className="live-tag"><span className="pulse-dot" /> {network === "testnet" ? "TIDEPOOL TESTNET" : "1CLICK MAINNET"}</span>
             </div>
             {!quoteResult && !quoteLoading && (
               <div className="empty-quote">
@@ -642,7 +667,7 @@ export default function Home() {
                 <div className="plan-pair-icon">{plan.sourceSymbol.slice(0, 1)}<span>↗</span>{plan.destinationSymbol.slice(0, 1)}</div>
                 <div className="plan-main">
                   <strong>{plan.sourceSymbol} <span>→</span> {plan.destinationSymbol}</strong>
-                  <small>{plan.sourceChain.toUpperCase()} to {plan.destinationChain.toUpperCase()} · {plan.frequency.toLowerCase()}</small>
+                  <small>{plan.sourceChain.toUpperCase()} to {plan.destinationChain.toUpperCase()} · {plan.frequency.toLowerCase()} · {(plan.network || "mainnet") === "testnet" ? "TIDEPOOL TESTNET" : "MAINNET"}</small>
                   {plan.lastDryRun && <small className={"plan-check-result " + plan.lastDryRun.status.toLowerCase()}>{plan.lastDryRun.status}: {plan.lastDryRun.message}</small>}
                   {plan.lastDryRun?.output && <small className="plan-check-detail">Expected {plan.lastDryRun.output}{plan.lastDryRun.minimumOutput ? " · Minimum " + plan.lastDryRun.minimumOutput : ""}</small>}
                 </div>
