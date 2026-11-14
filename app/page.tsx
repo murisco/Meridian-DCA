@@ -448,6 +448,7 @@ export default function Home() {
         amountIn: refRouteQuote.amountIn,
         minimumOut: refRouteQuote.bestQuote.minimumOut,
         poolId: refRouteQuote.bestQuote.poolId,
+        protocol: refRouteQuote.protocol === "ref-v1" ? "ref-v1" : "ref-dcl-v2",
         inputRegistered: refRouteQuote.inputRegistered,
         outputRegistered: refRouteQuote.outputRegistered,
         outputStorageMinimum: refRouteQuote.outputStorageMinimum,
@@ -789,7 +790,8 @@ export default function Home() {
             <div className="quote-detail"><span>Estimated WBTC output</span><strong>{refRouteQuote.bestQuote.amountOutFormatted} WBTC</strong></div>
             <div className="quote-detail"><span>Minimum received</span><strong>{formatBaseUnits(refRouteQuote.bestQuote.minimumOut, 8)} WBTC</strong></div>
             <div className="quote-detail"><span>Pool fee</span><strong>{(refRouteQuote.bestQuote.fee / 100).toFixed(2)}%</strong></div>
-            <div className="quote-detail"><span>Pool ID</span><strong className="reference">{refRouteQuote.bestQuote.poolId}</strong></div>
+            <div className="quote-detail"><span>Route</span><strong>{refRouteQuote.protocol === "ref-v1" ? "Ref classic exchange" : "Ref DCL v2"}</strong></div>
+                    <div className="quote-detail"><span>Pool ID</span><strong className="reference">{refRouteQuote.bestQuote.poolId}</strong></div>
             <div className="quote-detail"><span>WBTC wallet registration</span><strong>{refRouteQuote.outputRegistered ? "Already registered" : "Required before swap"}</strong></div>
             {!refRouteQuote.outputRegistered && <p className="fee-note">Your wallet will first ask you to register the WBTC token account with a one-time storage deposit of {formatBaseUnits(refRouteQuote.outputStorageMinimum, 24)} NEAR. The swap is a separate approval.</p>}
             <button className="button button-primary full-button" type="button" onClick={executeRefFinanceSwap} disabled={["AWAITING_WALLET","REGISTERING_OUTPUT","SUBMITTED","PENDING","SUCCESS"].includes(liveSwapStatus)}>
