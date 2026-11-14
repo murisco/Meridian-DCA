@@ -207,6 +207,9 @@ export default function Home() {
   const [liveSwapStatus, setLiveSwapStatus] = useState("");
   const [liveSwapMessage, setLiveSwapMessage] = useState("");
   const [liveSwapPreparing, setLiveSwapPreparing] = useState(false);
+  const [refRouteQuote, setRefRouteQuote] = useState<any>(null);
+  const [refRouteLoading, setRefRouteLoading] = useState(false);
+  const [refRouteError, setRefRouteError] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -378,6 +381,60 @@ export default function Home() {
     } finally {
       setLiveSwapPreparing(false);
     }
+  }
+
+  async function prepareRefFinanceQuote() {
+    setRefRouteError("");
+    setRefRouteQuote(null);
+    setRefRouteLoading(true);
+    setLiveSwapStatus("");
+    setLiveSwapMessage("");
+    try {
+      if (network !== "testnet") throw new Error("Ref Finance route is only available on NEAR testnet.");
+      if (!recipient.trim()) throw new Error("Enter your connected NEAR testnet wallet account in the destination wallet field.");
+      const response = await fetch("/api/ref/quote", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          accountId: recipient.trim(),
+          amount,
+          slippageBps: Number(slippage),
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok || data.available !== true) throw new Error(data.error || "No Ref Finance route is currently available.");
+      setRefRouteQuote(data);
+    } catch (error) {
+      setRefRouteError(error instanceof Error ? error.message : "Could not check the Ref Finance testnet route.");
+    } finally {
+      setRefRouteLoading(false);
+    }
+  }
+
+  function executeRefFinanceSwap() {
+    if (!refRouteQuote) return;
+    if (refRouteQuote.accountId !== recipient.trim()) {
+      setRefRouteError("Wallet account changed. Check the route again before swapping.");
+      return;
+    }
+    if (Date.now() - Date.parse(refRouteQuote.checkedAt) > 60000) {
+      setRefRouteError("This quote is more than one minute old. Check the route again before approving.");
+      setRefRouteQuote(null);
+      return;
+    }
+    setLiveSwapStatus("AWAITING_WALLET");
+    setLiveSwapMessage("Waiting for your wallet to approve the WBTC registration (if needed) and swap.");
+    window.dispatchEvent(new CustomEvent("meridian:execute-ref-swap", {
+      detail: {
+        accountId: refRouteQuote.accountId,
+        amountIn: refRouteQuote.amountIn,
+        minimumOut: refRouteQuote.bestQuote.minimumOut,
+        poolId: refRouteQuote.bestQuote.poolId,
+        inputRegistered: refRouteQuote.inputRegistered,
+        outputRegistered: refRouteQuote.outputRegistered,
+        outputStorageMinimum: refRouteQuote.outputStorageMinimum,
+      },
+    }));
   }
 
   function approveFirstSwap() {
@@ -697,6 +754,36 @@ export default function Home() {
               <div><span className="step-number">02</span><h3>Quote preview</h3></div>
               <span className="live-tag"><span className="pulse-dot" /> {network === "testnet" ? "TIDEPOOL TESTNET" : "1CLICK MAINNET"}</span>
             </div>
+            {network === "testnet" && (
+              <div className="ref-direct-panel">
+                <div className="ref-direct-heading"><strong>USE YOUR EXISTING wNEAR</strong><span>REF FINANCE · TESTNET</span></div>
+                <p className="live-swap-note">This route uses your actual <strong>wrap.testnet</strong> wNEAR and Ref Finance's testnet WBTC token. It is separate from Tidepool's sandbox assets.</p>
+                <div className="quote-detail"><span>Swap pair</span><strong>wNEAR → WBTC</strong></div>
+                <div className="quote-detail"><span>Input amount</span><strong>{amount || "—"} wNEAR</strong></div>
+                <div className="quote-detail"><span>Wallet account</span><strong>{recipient.trim() || "Enter wallet address above"}</strong></div>
+                {!refRouteQuote ? (
+                  <button className="button button-primary full-button" type="button" onClick={prepareRefFinanceQuote} disabled={refRouteLoading}>
+                    {refRouteLoading ? "Checking live pool and quote…" : "Check Ref Finance liquidity"}
+                  </button>
+                ) : (
+                  <>
+                    <div className="quote-detail"><span>Estimated WBTC output</span><strong>{refRouteQuote.bestQuote.amountOutFormatted} WBTC</strong></div>
+                    <div className="quote-detail"><span>Minimum received</span><strong>{formatBaseUnits(refRouteQuote.bestQuote.minimumOut, 8)} WBTC</strong></div>
+                    <div className="quote-detail"><span>Pool fee</span><strong>{(refRouteQuote.bestQuote.fee / 100).toFixed(2)}%</strong></div>
+                    <div className="quote-detail"><span>Pool ID</span><strong className="reference">{refRouteQuote.bestQuote.poolId}</strong></div>
+                    <div className="quote-detail"><span>WBTC wallet registration</span><strong>{refRouteQuote.outputRegistered ? "Already registered" : "Required before swap"}</strong></div>
+                    {!refRouteQuote.outputRegistered && <p className="fee-note">Your wallet will first ask you to register the WBTC token account with a one-time storage deposit of {formatBaseUnits(refRouteQuote.outputStorageMinimum, 24)} NEAR. The swap is a separate approval.</p>}
+                    <button className="button button-primary full-button" type="button" onClick={executeRefFinanceSwap} disabled={["AWAITING_WALLET","REGISTERING_OUTPUT","SUBMITTED","PENDING","SUCCESS"].includes(liveSwapStatus)}>
+                      Approve wNEAR → WBTC swap
+                    </button>
+                    <button className="button button-secondary full-button" type="button" onClick={() => { setRefRouteQuote(null); setLiveSwapStatus(""); setLiveSwapMessage(""); }}>Discard Ref quote</button>
+                  </>
+                )}
+                {refRouteError && <div className="swap-execution-state error" role="alert"><strong>ROUTE CHECK</strong><span>{refRouteError}</span></div>}
+                {liveSwapStatus && <div className={"swap-execution-state " + (liveSwapStatus === "SUCCESS" ? "success" : liveSwapStatus === "ERROR" ? "error" : "")} role="status" aria-live="polite"><strong>{liveSwapStatus.replaceAll("_", " ")}</strong><span>{liveSwapMessage}</span></div>}
+                <p className="fee-note">Ref Finance quotes are checked live from the testnet DCL contract. No transaction is sent until you approve it in your wallet.</p>
+              </div>
+            )}
             {!quoteResult && !quoteLoading && (
               <div className="empty-quote">
                 <div className="empty-icon">↗</div>
