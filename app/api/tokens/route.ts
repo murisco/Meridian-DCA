@@ -1,14 +1,18 @@
-import { fetchIntentTokens } from "@/lib/intents";
+import { fetchIntentTokens, type IntentNetwork } from "@/lib/intents";
 
-export const revalidate = 300;
+export const revalidate = 60;
 
-export async function GET() {
+export async function GET(request: Request) {
+  const requestedNetwork = new URL(request.url).searchParams.get("network");
+  const network: IntentNetwork = requestedNetwork === "testnet" ? "testnet" : "mainnet";
+
   try {
-    const assets = await fetchIntentTokens();
+    const assets = await fetchIntentTokens(network);
     return Response.json({
       assets,
       count: assets.length,
-      source: "NEAR Intents 1Click API",
+      network,
+      source: network === "testnet" ? "Tidepool community testnet sandbox" : "NEAR Intents 1Click mainnet",
       fetchedAt: new Date().toISOString(),
     });
   } catch (error) {
