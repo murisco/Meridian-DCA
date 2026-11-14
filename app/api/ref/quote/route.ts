@@ -94,55 +94,68 @@ export async function POST(request: Request) {
 
   try {
     const amountIn = parsePositiveAmount(input.amount);
-    const [inputMeta, outputMeta, inputStorage, outputStorage, outputBounds, pools] = await Promise.all([
+    const [inputMeta, outputMeta, inputStorage, outputStorage, outputBounds] = await Promise.all([
       view(INPUT_TOKEN, "ft_metadata"),
       view(OUTPUT_TOKEN, "ft_metadata"),
       view(INPUT_TOKEN, "storage_balance_of", { account_id: accountId }),
       view(OUTPUT_TOKEN, "storage_balance_of", { account_id: accountId }),
       view(OUTPUT_TOKEN, "storage_balance_bounds"),
-      view(REF_DCL_CONTRACT, "list_pools"),
     ]);
 
     if (inputMeta.decimals !== 24 || outputMeta.decimals !== 8) {
       throw new Error("Ref Finance testnet token metadata did not match the expected wNEAR/WBTC decimals.");
     }
-    if (typeof outputBounds?.min !== "string" || !/^\d+$/.test(outputBounds.min)) {
+    if (typeof outputBounds?.min !== "string" || !/^\\d+$/.test(outputBounds.min)) {
       throw new Error("Ref Finance did not return a valid WBTC storage-registration minimum.");
     }
-    if (!Array.isArray(pools)) throw new Error("Ref Finance returned an invalid DCL pool list.");
 
-    const allowedFees = new Set([100, 400, 2000, 10000]);
-    const matchingPools = pools.filter((pool: any) =>
-      (pool.token_x === INPUT_TOKEN && pool.token_y === OUTPUT_TOKEN ||
-       pool.token_x === OUTPUT_TOKEN && pool.token_y === INPUT_TOKEN) &&
-      pool.state === "Running" &&
-      allowedFees.has(Number(pool.fee)) &&
-      typeof pool.pool_id === "string"
-    );
+    // Ref Finance's SDK derives each DCL pool ID from the sorted token IDs and
+    // checks the four supported fee tiers directly. Avoid list_pools here:
+    // scanning the entire DCL pool registry exceeds NEAR's view-call gas limit.
+    const feeTiers = [100, 400, 2000, 10000];
+    const poolChecks = await Promise.all(feeTiers.map(async (fee) => {
+      const poolId = [INPUT_TOKEN, OUTPUT_TOKEN].sort().join("|") + "|" + fee;
+      try {
+        const pool = await view(REF_DCL_CONTRACT, "get_pool", { pool_id: poolId });
+        if (!pool || typeof pool !== "object") return { fee, poolId, pool: null, error: "Pool not found." };
+        const tokenX = pool.token_x || pool.token_x_id || pool.token_account_ids?.[0];
+        const tokenY = pool.token_y || pool.token_y_id || pool.token_account_ids?.[1];
+        if ((tokenX && tokenX !== [INPUT_TOKEN, OUTPUT_TOKEN].sort()[0]) ||
+            (tokenY && tokenY !== [INPUT_TOKEN, OUTPUT_TOKEN].sort()[1])) {
+          return { fee, poolId, pool: null, error: "Pool token pair did not match the requested route." };
+        }
+        return { fee, poolId, pool, error: null };
+      } catch (error) {
+        return { fee, poolId, pool: null, error: error instanceof Error ? error.message : "Pool view failed." };
+      }
+    }));
 
-    const quotes = await Promise.all(matchingPools.map(async (pool: any) => {
+    const existingPools = poolChecks.filter((item) => item.pool !== null);
+    const quoteChecks = await Promise.all(existingPools.map(async (item) => {
       try {
         const quote = await view(REF_DCL_CONTRACT, "quote", {
-          pool_ids: [pool.pool_id],
+          pool_ids: [item.poolId],
           input_token: INPUT_TOKEN,
           output_token: OUTPUT_TOKEN,
           input_amount: amountIn,
-          tag: "meridian-dca-" + pool.fee + "-" + amountIn,
+          tag: "meridian-dca-" + item.fee + "-" + amountIn,
         });
-        if (!quote || !/^\d+$/.test(String(quote.amount || "")) || BigInt(quote.amount) <= 0n) return null;
+        if (!quote || !/^\\d+$/.test(String(quote.amount || "")) || BigInt(quote.amount) <= 0n) return null;
         const minimumOut = (BigInt(quote.amount) * BigInt(10000 - slippageBps) / 10000n).toString();
         return {
-          poolId: pool.pool_id,
-          fee: pool.fee,
-          state: pool.state,
-          liquidity: pool.liquidity || "0",
-          totalX: pool.total_x || "0",
-          totalY: pool.total_y || "0",
+          poolId: item.poolId,
+          fee: item.fee,
+          state: item.pool.state || "Available",
+          liquidity: item.pool.liquidity || "0",
+          totalX: item.pool.total_x || "0",
+          totalY: item.pool.total_y || "0",
           amountOut: String(quote.amount),
           minimumOut,
           amountOutFormatted: formatBaseUnits(String(quote.amount), 8),
         };
-      } catch { return null; }
+      } catch {
+        return null;
+      }
     }));
 
     const validQuotes = quotes.filter((quote): quote is NonNullable<typeof quote> => quote !== null)
@@ -151,12 +164,12 @@ export async function POST(request: Request) {
     if (!validQuotes.length) {
       return Response.json({
         available: false,
-        error: matchingPools.length
-          ? "A Ref Finance WBTC/wNEAR pool is listed, but it did not return a usable quote for this amount."
-          : "No running Ref Finance testnet pool exists for wrap.testnet wNEAR and wbtc.fakes.testnet. No transaction was sent.",
+        error: existingPools.length
+          ? "The Ref Finance pool exists, but its quote method did not return a usable price for 0.01–0.02 wNEAR."
+          : "No direct Ref Finance DCL pool was found for wrap.testnet wNEAR and wbtc.fakes.testnet at the four supported fee tiers. No transaction was sent.",
         inputToken: { contractId: INPUT_TOKEN, symbol: inputMeta.symbol, decimals: inputMeta.decimals },
         outputToken: { contractId: OUTPUT_TOKEN, symbol: outputMeta.symbol, decimals: outputMeta.decimals },
-        matchingPools,
+        poolChecks: poolChecks.map(({fee,poolId,pool,error}) => ({fee,poolId,found:!!pool,error})),
       }, { status: 404 });
     }
 
@@ -177,7 +190,7 @@ export async function POST(request: Request) {
       slippageBps,
       bestQuote: validQuotes[0],
       alternatives: validQuotes,
-      poolCount: matchingPools.length,
+      poolCount: existingPools.length,
       checkedAt: new Date().toISOString(),
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
