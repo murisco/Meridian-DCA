@@ -405,8 +405,8 @@ export default function Home() {
     setLiveSwapMessage("");
     try {
       if (network !== "testnet") throw new Error("Ref Finance route is only available on NEAR testnet.");
-      if (origin?.symbol.toUpperCase() !== "WNEAR" || destination?.symbol.toUpperCase() !== "WBTC") {
-        throw new Error("For the immediate Ref Finance purchase, select wNEAR as the source and wBTC as the destination.");
+      if (origin?.symbol.toUpperCase() !== "WNEAR") {
+        throw new Error("For the immediate Ref Finance purchase, select wNEAR as the source asset. The Ref route buys USDT.e directly.");
       }
       if (!amount.trim()) throw new Error("Enter the wNEAR amount you want to swap.");
       if (!recipient.trim()) throw new Error("Connect your NEAR testnet wallet and use its address as the recipient.");
@@ -452,6 +452,8 @@ export default function Home() {
         inputRegistered: refRouteQuote.inputRegistered,
         outputRegistered: refRouteQuote.outputRegistered,
         outputStorageMinimum: refRouteQuote.outputStorageMinimum,
+        outputContractId: refRouteQuote.outputToken.contractId,
+        outputSymbol: refRouteQuote.outputToken.symbol,
       },
     }));
   }
@@ -494,9 +496,9 @@ export default function Home() {
     const newPlan: Plan = {
       id: window.crypto?.randomUUID?.() || String(Date.now()),
       sourceAssetId: network === "testnet" && liveSwapStatus === "SUCCESS" ? "wrap.testnet" : origin.assetId,
-      destinationAssetId: network === "testnet" && liveSwapStatus === "SUCCESS" ? "wbtc.fakes.testnet" : destination.assetId,
+      destinationAssetId: network === "testnet" && liveSwapStatus === "SUCCESS" ? "usdt.fakes.testnet" : destination.assetId,
       sourceSymbol: network === "testnet" && liveSwapStatus === "SUCCESS" ? "wNEAR" : origin.symbol,
-      destinationSymbol: network === "testnet" && liveSwapStatus === "SUCCESS" ? "WBTC" : destination.symbol,
+      destinationSymbol: network === "testnet" && liveSwapStatus === "SUCCESS" ? "USDT.e" : destination.symbol,
       sourceChain: origin.blockchain,
       destinationChain: destination.blockchain,
       amount,
@@ -777,23 +779,23 @@ export default function Home() {
             {network === "testnet" && (
             <div className="ref-direct-panel investment-buy-panel">
             <div className="ref-direct-heading"><strong>MAKE YOUR FIRST BUY NOW</strong><span>REF FINANCE · TESTNET</span></div>
-            <p className="live-swap-note">This buy uses your connected wallet's <strong>wrap.testnet wNEAR</strong> and Ref Finance testnet <strong>WBTC</strong>. Select wNEAR → wBTC above. This is a real testnet DEX swap, separate from the Tidepool quote preview.</p>
-            <div className="quote-detail"><span>Swap pair</span><strong>wNEAR → WBTC</strong></div>
+            <p className="live-swap-note">This buy uses your connected wallet's <strong>wrap.testnet wNEAR</strong> and the verified Ref Finance testnet <strong>USDT.e</strong> pool. Select wNEAR as the source above. The destination selector only affects the separate Tidepool quote preview.</p>
+            <div className="quote-detail"><span>Swap pair</span><strong>wNEAR → USDT.e</strong></div>
             <div className="quote-detail"><span>Input amount</span><strong>{amount || "—"} wNEAR</strong></div>
             <div className="quote-detail"><span>Wallet account</span><strong>{recipient.trim() || "Enter wallet address above"}</strong></div>
             {!refRouteQuote ? (
-            <button className="button button-primary full-button" type="button" onClick={prepareRefFinanceQuote} disabled={refRouteLoading || !amount.trim() || origin?.symbol.toUpperCase() !== "WNEAR" || destination?.symbol.toUpperCase() !== "WBTC" || !recipient.trim()}>
+            <button className="button button-primary full-button" type="button" onClick={prepareRefFinanceQuote} disabled={refRouteLoading || !amount.trim() || origin?.symbol.toUpperCase() !== "WNEAR" || !recipient.trim()}>
             {refRouteLoading ? "Getting swap quote…" : "Preview immediate swap"}
             </button>
             ) : (
             <>
-            <div className="quote-detail"><span>Estimated WBTC output</span><strong>{refRouteQuote.bestQuote.amountOutFormatted} WBTC</strong></div>
-            <div className="quote-detail"><span>Minimum received</span><strong>{formatBaseUnits(refRouteQuote.bestQuote.minimumOut, 8)} WBTC</strong></div>
-            <div className="quote-detail"><span>Pool fee</span><strong>{(refRouteQuote.bestQuote.fee / 100).toFixed(2)}%</strong></div>
+            <div className="quote-detail"><span>Estimated {refRouteQuote.outputToken.symbol} output</span><strong>{refRouteQuote.bestQuote.amountOutFormatted} {refRouteQuote.outputToken.symbol}</strong></div>
+            <div className="quote-detail"><span>Minimum received</span><strong>{formatBaseUnits(refRouteQuote.bestQuote.minimumOut, refRouteQuote.outputToken.decimals)} {refRouteQuote.outputToken.symbol}</strong></div>
+            <div className="quote-detail"><span>Pool fee</span><strong>{(refRouteQuote.bestQuote.fee / 10000).toFixed(2)}%</strong></div>
             <div className="quote-detail"><span>Route</span><strong>{refRouteQuote.protocol === "ref-v1" ? "Ref classic exchange" : "Ref DCL v2"}</strong></div>
                     <div className="quote-detail"><span>Pool ID</span><strong className="reference">{refRouteQuote.bestQuote.poolId}</strong></div>
-            <div className="quote-detail"><span>WBTC wallet registration</span><strong>{refRouteQuote.outputRegistered ? "Already registered" : "Required before swap"}</strong></div>
-            {!refRouteQuote.outputRegistered && <p className="fee-note">Your wallet will first ask you to register the WBTC token account with a one-time storage deposit of {formatBaseUnits(refRouteQuote.outputStorageMinimum, 24)} NEAR. The swap is a separate approval.</p>}
+            <div className="quote-detail"><span>{refRouteQuote.outputToken.symbol} wallet registration</span><strong>{refRouteQuote.outputRegistered ? "Already registered" : "Required before swap"}</strong></div>
+            {!refRouteQuote.outputRegistered && <p className="fee-note">Your wallet will first ask you to register the {refRouteQuote.outputToken.symbol} token account with a one-time storage deposit of {formatBaseUnits(refRouteQuote.outputStorageMinimum, 24)} NEAR. The swap is a separate approval.</p>}
             <button className="button button-primary full-button" type="button" onClick={executeRefFinanceSwap} disabled={["AWAITING_WALLET","REGISTERING_OUTPUT","SUBMITTED","PENDING","SUCCESS"].includes(liveSwapStatus)}>
             Approve and swap now
             </button>
@@ -825,7 +827,7 @@ export default function Home() {
               </button>
               <button className="button button-secondary" type="button" onClick={createPlan} disabled={assetsLoading || !origin || !destination || !amount.trim() || (network === "testnet" && liveSwapStatus !== "SUCCESS")}>Save recurring plan</button>
             </div>
-            {network === "testnet" && liveSwapStatus !== "SUCCESS" && <p className="form-footnote">Complete your first wNEAR → WBTC purchase above to unlock saving the recurring plan.</p>}
+            {network === "testnet" && liveSwapStatus !== "SUCCESS" && <p className="form-footnote">Complete your first wNEAR → USDT.e purchase above to unlock saving the recurring plan.</p>}
             {planSaveMessage && <div className="plan-save-success" role="status" aria-live="polite"><strong>✓ Plan saved successfully</strong><span>{planSaveMessage}</span><a href="#plans">View saved plan ↓</a></div>}
             {storageWarning && <div className="alert error" role="alert">{storageWarning}</div>}
             <p className="form-footnote"><span>ⓘ</span> Saving a plan stores a reminder in this browser. It does not schedule or execute a blockchain transaction.</p>
