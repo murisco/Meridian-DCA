@@ -181,7 +181,7 @@ export default function WalletConnect() {
         if (payload.accountId !== accountId) throw new Error("The route account does not match the connected wallet.");
         const swapProtocol = payload.protocol || "ref-dcl-v2";
         if (swapProtocol === "ref-v1") {
-          if (!/^\\d{1,12}$/.test(payload.poolId)) {
+          if (!/^\d{1,12}$/.test(payload.poolId)) {
             throw new Error("The Ref Finance classic pool ID is invalid.");
           }
         } else if (payload.poolId !== "wbtc.fakes.testnet|wrap.testnet|100" &&
