@@ -15,9 +15,11 @@ type RpcResponse = {
 };
 
 function decodeJsonResult(result: number[] | undefined): unknown {
-  if (!Array.isArray(result)) return null;
+  if (!Array.isArray(result)) throw new Error("The NEAR wrapper returned an unreadable view response.");
   const encoded = Buffer.from(result).toString("utf8");
-  try { return JSON.parse(encoded); } catch { return null; }
+  try { return JSON.parse(encoded); } catch {
+    throw new Error("The NEAR wrapper returned invalid JSON.");
+  }
 }
 
 function formatUnits(raw: string, decimals: number, maxFraction = 6) {
@@ -126,7 +128,10 @@ export async function GET(request: Request) {
       throw new Error("Could not verify the testnet wNEAR balance.");
     }
     const wrapStorage = decodeJsonResult(wrapStorageResult.result?.result);
-    const wrapRegistered = Boolean(wrapStorage && typeof wrapStorage === "object" && "total" in wrapStorage);
+    if (wrapStorage !== null && (typeof wrapStorage !== "object" || !("total" in wrapStorage))) {
+      throw new Error("The NEAR wrapper returned an unexpected storage-registration response.");
+    }
+    const wrapRegistered = wrapStorage !== null;
 
     return Response.json({
       network: "testnet",
