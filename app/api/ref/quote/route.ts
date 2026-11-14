@@ -187,6 +187,105 @@ export async function POST(request: Request) {
       // Fall through to the direct DCL quote check if the indexer is unavailable.
     }
 
+    // The testnet indexer may omit older classic pools. Verify the known
+    // wNEAR/USDT.e classic pool directly against the live exchange contract.
+    // Pool 34 has a historical successful testnet swap, but we only quote it
+    // when current on-chain state confirms the exact pair and positive reserves.
+    let classicPoolCheck: Record<string, unknown> = {
+      poolId: 34,
+      found: false,
+      usable: false,
+      reason: "Direct classic-pool lookup was not completed.",
+    };
+    try {
+      const classicPool = await view(REF_EXCHANGE_CONTRACT, "get_pool", { pool_id: 34 });
+      const tokenIds = Array.isArray(classicPool?.token_account_ids) ? classicPool.token_account_ids : [];
+      const amounts = Array.isArray(classicPool?.amounts) ? classicPool.amounts : [];
+      const inputIndex = tokenIds.indexOf(INPUT_TOKEN);
+      const outputIndex = tokenIds.indexOf(OUTPUT_TOKEN);
+      const pairMatches = inputIndex >= 0 && outputIndex >= 0 &&
+        /^\\d+$/.test(String(amounts[inputIndex] ?? "")) &&
+        /^\\d+$/.test(String(amounts[outputIndex] ?? ""));
+      const fee = Number(classicPool?.total_fee ?? 25);
+      const inputReserve = pairMatches ? BigInt(amounts[inputIndex]) : 0n;
+      const outputReserve = pairMatches ? BigInt(amounts[outputIndex]) : 0n;
+      classicPoolCheck = {
+        poolId: 34,
+        found: !!classicPool,
+        pairMatches,
+        tokenIds,
+        inputReserve: pairMatches ? inputReserve.toString() : null,
+        outputReserve: pairMatches ? outputReserve.toString() : null,
+        fee,
+        poolKind: classicPool?.pool_kind || null,
+        usable: !!classicPool && pairMatches && inputReserve > 0n && outputReserve > 0n &&
+          Number.isInteger(fee) && fee >= 0 && fee < 10000,
+      };
+
+      if (classicPoolCheck.usable) {
+        const amountWithFee = BigInt(amountIn) * BigInt(10000 - fee);
+        const denominator = inputReserve * 10000n + amountWithFee;
+        const amountOut = denominator > 0n
+          ? amountWithFee * outputReserve / denominator
+          : 0n;
+        if (amountOut > 0n && amountOut < outputReserve) {
+          const minimumOut = amountOut * BigInt(10000 - slippageBps) / 10000n;
+          return Response.json({
+            available: true,
+            network: "testnet",
+            dex: "Ref Finance",
+            protocol: "ref-v1",
+            exchangeContract: REF_EXCHANGE_CONTRACT,
+            accountId,
+            amountIn,
+            amountInFormatted: formatBaseUnits(amountIn, 24),
+            inputToken: { contractId: INPUT_TOKEN, symbol: inputMeta.symbol, decimals: inputMeta.decimals },
+            outputToken: { contractId: OUTPUT_TOKEN, symbol: outputMeta.symbol, decimals: outputMeta.decimals },
+            inputRegistered: inputStorage !== null,
+            outputRegistered: outputStorage !== null,
+            outputStorageMinimum: outputBounds.min,
+            slippageBps,
+            bestQuote: {
+              poolId: "34",
+              fee,
+              state: "Live classic pool",
+              amountOut: amountOut.toString(),
+              minimumOut: minimumOut.toString(),
+              amountOutFormatted: formatBaseUnits(amountOut.toString(), outputMeta.decimals),
+              inputReserve: inputReserve.toString(),
+              outputReserve: outputReserve.toString(),
+            },
+            alternatives: [],
+            poolCount: 1,
+            checkedAt: new Date().toISOString(),
+          }, { headers: { "Cache-Control": "no-store" } });
+        }
+        classicPoolCheck = {
+          ...classicPoolCheck,
+          usable: false,
+          reason: amountOut <= 0n
+            ? "The live classic pool returned no positive output for this amount."
+            : "The live classic pool quote exceeded its output reserve.",
+        };
+      } else {
+        classicPoolCheck = {
+          ...classicPoolCheck,
+          reason: !classicPool
+            ? "Classic pool 34 was not returned by the exchange contract."
+            : !pairMatches
+              ? "Classic pool 34 does not currently contain the expected wNEAR/USDT.e pair."
+              : "Classic pool 34 has no positive reserves or an invalid fee.",
+        };
+      }
+    } catch (error) {
+      classicPoolCheck = {
+        poolId: 34,
+        found: false,
+        usable: false,
+        reason: error instanceof Error ? error.message : "Classic pool view failed.",
+      };
+    }
+
     // Ref's full list_pools view exceeds the testnet view-gas limit.
     // Query only the four exact candidate IDs with the SDK's getDCLPool() method.
     const feeTiers = [100, 400, 2000, 10000];
@@ -268,7 +367,8 @@ export async function POST(request: Request) {
         available: false,
         error: "No running Ref Finance DCL pool returned a usable wNEAR/USDT.e quote. No transaction was sent.",
         discovery: {
-          method: "get_pool by exact pool ID",
+          method: "direct classic get_pool(34) check followed by exact DCL get_pool checks",
+          classicPoolCheck,
           attemptedPoolIds: candidatePoolChecks.map((item) => item.poolId),
           poolChecks: candidatePoolChecks.map(({fee,poolId,pool,error}) => ({
             fee, poolId, found: !!pool, state: pool?.state || null,
