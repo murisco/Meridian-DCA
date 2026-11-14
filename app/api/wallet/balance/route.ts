@@ -216,7 +216,7 @@ export async function GET(request: Request) {
       refWbtc,
       tokens: tokenBalances.filter((token): token is NonNullable<typeof token> => token !== null),
       updatedAt: new Date().toISOString(),
-      source: "NEAR testnet RPC and Tidepool test-token contracts",
+      source: "NEAR testnet RPC, Tidepool test-token contracts and Ref Finance WBTC",
     }, {
       headers: { "Cache-Control": "no-store" },
     });
