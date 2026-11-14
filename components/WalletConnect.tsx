@@ -14,8 +14,27 @@ type WalletBalance = {
 };
 
 const WRAP_CONTRACT_ID = "wrap.testnet";
-const WRAP_AMOUNT_RAW = "20000000000000000000000"; // exactly 0.02 NEAR
+const MAX_WRAP_AMOUNT_RAW = 3000000000000000000000000n; // cap this user-initiated wrap at 3 NEAR
+const WRAP_RESERVE_RAW = 500000000000000000000000n; // keep 0.5 NEAR liquid for gas
 const STORAGE_DEPOSIT_RAW = "1250000000000000000000"; // 0.00125 NEAR
+
+function parseNearToYocto(value: string): bigint {
+  const amount = value.trim();
+  if (!/^(?:0|[1-9]\\d*)(?:\\.\\d{1,24})?$/.test(amount)) {
+    throw new Error("Enter a valid NEAR amount with up to 24 decimal places.");
+  }
+  const [whole, fraction = ""] = amount.split(".");
+  const raw = BigInt(whole) * 10n ** 24n + BigInt((fraction + "0".repeat(24)).slice(0, 24));
+  if (raw <= 0n) throw new Error("The amount must be greater than zero.");
+  if (raw > MAX_WRAP_AMOUNT_RAW) throw new Error("For this test, you can wrap up to 3 NEAR at a time.");
+  return raw;
+}
+
+function formatNearAmount(raw: bigint): string {
+  const whole = raw / 10n ** 24n;
+  const fraction = (raw % (10n ** 24n)).toString().padStart(24, "0").replace(/0+$/, "");
+  return fraction ? whole.toString() + "." + fraction : whole.toString();
+}
 const FUNCTION_CALL_GAS = "30000000000000"; // 30 Tgas
 
 type RefSwapExecutionPayload = {
@@ -57,6 +76,7 @@ export default function WalletConnect() {
   const [balanceError, setBalanceError] = useState("");
   const [balanceRefresh, setBalanceRefresh] = useState(0);
   const [wrapBusy, setWrapBusy] = useState(false);
+  const [wrapAmount, setWrapAmount] = useState("3");
   const [wrapMessage, setWrapMessage] = useState("");
   const [wrapError, setWrapError] = useState("");
   const [swapBusy, setSwapBusy] = useState(false);
@@ -408,11 +428,17 @@ export default function WalletConnect() {
       return;
     }
 
-    const minimumReserve = 30000000000000000000000n; // keep at least 0.03 NEAR after attached deposits
-    const totalAttached = BigInt(WRAP_AMOUNT_RAW) + (balance.wrapRegistered ? 0n : BigInt(STORAGE_DEPOSIT_RAW));
+    let wrapAmountRaw: bigint;
+    try {
+      wrapAmountRaw = parseNearToYocto(wrapAmount);
+    } catch (error) {
+      setWrapError(error instanceof Error ? error.message : "Enter a valid NEAR amount.");
+      return;
+    }
+    const totalAttached = wrapAmountRaw + (balance.wrapRegistered ? 0n : BigInt(STORAGE_DEPOSIT_RAW));
     const liquidBalance = BigInt(balance.nearRaw);
-    if (liquidBalance < totalAttached + minimumReserve) {
-      setWrapError("Your testnet balance is too low to wrap 0.02 NEAR while keeping a 0.03 NEAR safety reserve for gas.");
+    if (liquidBalance < totalAttached + WRAP_RESERVE_RAW) {
+      setWrapError("Not enough liquid NEAR. This action keeps at least 0.5 NEAR in your wallet for gas and future transactions.");
       return;
     }
 
@@ -451,7 +477,7 @@ export default function WalletConnect() {
           methodName: "near_deposit",
           args: {},
           gas: FUNCTION_CALL_GAS,
-          deposit: WRAP_AMOUNT_RAW,
+          deposit: wrapAmountRaw.toString(),
         },
       });
 
@@ -474,9 +500,9 @@ export default function WalletConnect() {
         if (!response.ok) throw new Error(data.error || "Transaction was submitted, but the balance check failed.");
         const updated = data as WalletBalance;
         setBalance(updated);
-        const expected = BigInt(balance.wrapNear.rawBalance) + BigInt(WRAP_AMOUNT_RAW);
+        const expected = BigInt(balance.wrapNear.rawBalance) + wrapAmountRaw;
         if (BigInt(updated.wrapNear.rawBalance) >= expected) {
-          setWrapMessage("Verified on NEAR testnet: 0.02 wNEAR received in your wallet.");
+          setWrapMessage("Verified on NEAR testnet: " + formatNearAmount(wrapAmountRaw) + " wNEAR received in your wallet.");
           setWrapError("");
           return;
         }
@@ -594,13 +620,26 @@ export default function WalletConnect() {
                 )}
                 {!balanceLoading && !balance && !balanceError && <small className="wallet-balance-muted">Balance has not loaded yet.</small>}
                 <div className="wallet-wrap-action">
+                  <label className="wallet-wrap-label" htmlFor="wallet-wrap-amount">NEAR TO WRAP</label>
+                  <input
+                    id="wallet-wrap-amount"
+                    className="wallet-wrap-input"
+                    type="number"
+                    inputMode="decimal"
+                    min="0.000000000000000000000001"
+                    max="3"
+                    step="0.01"
+                    value={wrapAmount}
+                    onChange={(event) => { setWrapAmount(event.target.value); setWrapError(""); setWrapMessage(""); }}
+                    disabled={wrapBusy}
+                  />
                   <div className="wallet-wrap-note">
-                    Wrap exactly <strong>0.02 NEAR</strong> into wNEAR on <strong>wrap.testnet</strong>.
+                    Convert up to <strong>3 NEAR</strong> into wNEAR on <strong>wrap.testnet</strong>. At least <strong>0.5 NEAR</strong> stays liquid for gas.
                     {balance?.wrapRegistered === false ? " First-time storage registration also attaches 0.00125 NEAR." : ""}
-                    Network gas is separate. Review every amount in your wallet before approving.
+                    The wallet will show the exact amount for your approval.
                   </div>
-                  <button type="button" className="wallet-wrap-button" onClick={wrapNear} disabled={wrapBusy || balanceLoading || !balance || balance.wrapRegistered === null}>
-                    {wrapBusy ? "Waiting for wallet / confirming…" : "Wrap 0.02 NEAR → wNEAR"}
+                  <button type="button" className="wallet-wrap-button" onClick={wrapNear} disabled={wrapBusy || balanceLoading || !balance || balance.wrapRegistered === null || !wrapAmount.trim()}>
+                    {wrapBusy ? "Waiting for wallet / confirming…" : "Wrap " + (wrapAmount.trim() || "—") + " NEAR → wNEAR"}
                   </button>
                   {wrapMessage && <small className="wallet-wrap-success" role="status">{wrapMessage}</small>}
                   {wrapError && <small className="wallet-wrap-error" role="alert">{wrapError}</small>}
