@@ -197,7 +197,7 @@ export default function Home() {
         )
       : assets;
     return list;
-  }, [assets, assetSearch]);
+  }, [assets, assetSearch, originAssetId, destinationAssetId]);
 
   const origin = assets.find((asset) => asset.assetId === originAssetId);
   const destination = assets.find((asset) => asset.assetId === destinationAssetId);
