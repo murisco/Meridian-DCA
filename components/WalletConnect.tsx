@@ -8,7 +8,7 @@ type WalletBalance = {
   nearRaw: string;
   wrapNear: { balance: string; rawBalance: string; contractId: string };
   wrapRegistered: boolean;
-  refWbtc: { contractId: string; balance: string; rawBalance: string; decimals: number; registered: boolean; storageMinimum: string };
+  refWbtc: { contractId: string; balance: string; rawBalance: string; decimals: number; registered: boolean; storageMinimum: string } | null;
   tokens: { symbol: string; contractId: string; balance: string; rawBalance: string; decimals: number }[];
   updatedAt: string;
 };
@@ -177,6 +177,7 @@ export default function WalletConnect() {
         if (BigInt(balance.nearRaw) < BigInt(payload.outputStorageMinimum) + 10000000000000000000000n) {
           throw new Error("Keep enough native NEAR for WBTC storage registration and transaction gas.");
         }
+        if (!balance.refWbtc) throw new Error("Ref Finance WBTC balance could not be read. Refresh your wallet and try again.");
         if (payload.outputRegistered !== balance.refWbtc.registered) {
           throw new Error("Your WBTC registration status changed. Refresh your wallet and request a new quote.");
         }
@@ -189,7 +190,7 @@ export default function WalletConnect() {
           const registration = await wallet.signAndSendTransaction({
             receiverId: "wbtc.ft.ref-labs.testnet",
             actions: [{
-              type: "FunctionCall",
+              type: "FunctionCall" as const,
               params: {
                 methodName: "storage_deposit",
                 args: { account_id: accountId, registration_only: true },
@@ -206,7 +207,7 @@ export default function WalletConnect() {
         const swapResult = await wallet.signAndSendTransaction({
           receiverId: "wrap.testnet",
           actions: [{
-            type: "FunctionCall",
+            type: "FunctionCall" as const,
             params: {
               methodName: "ft_transfer_call",
               args: {
@@ -243,7 +244,7 @@ export default function WalletConnect() {
           if (!response.ok) throw new Error(data.error || "Could not verify the WBTC payout.");
           const updated = data as WalletBalance;
           setBalance(updated);
-          if (BigInt(updated.refWbtc.rawBalance) > BigInt(balance.refWbtc.rawBalance)) {
+          if (updated.refWbtc && BigInt(updated.refWbtc.rawBalance) > BigInt(balance.refWbtc.rawBalance)) {
             publishSwapUpdate("SUCCESS", "Ref Finance confirmed the swap: WBTC balance increased.", {
               txHash, receivedRaw: (BigInt(updated.refWbtc.rawBalance) - BigInt(balance.refWbtc.rawBalance)).toString(),
             });
@@ -572,8 +573,12 @@ export default function WalletConnect() {
                   <>
                     <div className="wallet-balance-row"><span>NEAR</span><strong>{balance.near}</strong></div>
                     <div className="wallet-balance-row"><span>wNEAR · wrap.testnet</span><strong>{balance.wrapNear.balance}</strong></div>
-                    <div className="wallet-balance-row"><span>WBTC · Ref Finance testnet</span><strong>{balance.refWbtc.balance}</strong></div>
-                    <small className="wallet-balance-muted">WBTC account {balance.refWbtc.registered ? "registered" : "not registered yet"} · registration is required before receiving WBTC.</small>
+                    {balance.refWbtc ? (
+                      <>
+                        <div className="wallet-balance-row"><span>WBTC · Ref Finance testnet</span><strong>{balance.refWbtc.balance}</strong></div>
+                        <small className="wallet-balance-muted">WBTC account {balance.refWbtc.registered ? "registered" : "not registered yet"} · registration is required before receiving WBTC.</small>
+                      </>
+                    ) : <small className="wallet-balance-muted">Ref Finance WBTC balance is not available right now.</small>}
                     {balance.wrapNear.balance !== "0" && <small className="wallet-balance-muted">This is wrapper wNEAR, not Tidepool wNEAR. MERIDIAN's test swap uses the separate Tidepool token below.</small>}
                     {balance.tokens.map((token) => (
                       <div className="wallet-balance-row" key={token.contractId}><span>{token.symbol} · Tidepool</span><strong>{token.balance}</strong></div>
