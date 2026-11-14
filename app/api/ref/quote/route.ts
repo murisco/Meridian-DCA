@@ -1,5 +1,7 @@
 const RPC_URL = "https://rpc.testnet.near.org";
 const REF_DCL_CONTRACT = "dclv2.ref-dev.testnet";
+const REF_EXCHANGE_CONTRACT = "ref-finance-101.testnet";
+const REF_TESTNET_INDEXER = "https://testnet-indexer.ref-finance.com";
 const INPUT_TOKEN = "wrap.testnet";
 const OUTPUT_TOKEN = "wbtc.fakes.testnet";
 const ONE = 10n ** 24n;
@@ -109,6 +111,82 @@ export async function POST(request: Request) {
       throw new Error("Ref Finance did not return a valid WBTC storage-registration minimum.");
     }
 
+    // Check the classic Ref exchange indexer first, following the official
+    // SDK's fetchAllPools + instantSwap path. This can serve pairs not on DCL.
+    try {
+      const indexerResponse = await fetch(REF_TESTNET_INDEXER + "/fetchAllPools", {
+        headers: { Accept: "application/json" },
+        cache: "no-store",
+        signal: AbortSignal.timeout(12000),
+      });
+      if (indexerResponse.ok) {
+        const indexerData = await indexerResponse.json() as { simplePools?: any[] };
+        const simplePools = Array.isArray(indexerData.simplePools) ? indexerData.simplePools : [];
+        const matchingSimplePools = simplePools.filter((pool) =>
+          Array.isArray(pool.tokenIds) &&
+          pool.tokenIds.includes(INPUT_TOKEN) &&
+          pool.tokenIds.includes(OUTPUT_TOKEN) &&
+          pool.supplies &&
+          /^\d+$/.test(String(pool.supplies[INPUT_TOKEN] || "")) &&
+          /^\d+$/.test(String(pool.supplies[OUTPUT_TOKEN] || "")) &&
+          Number.isInteger(Number(pool.fee)) &&
+          Number(pool.fee) >= 0 &&
+          Number(pool.fee) < 10000
+        );
+
+        const simpleQuotes = matchingSimplePools.map((pool) => {
+          const inputReserve = BigInt(pool.supplies[INPUT_TOKEN]);
+          const outputReserve = BigInt(pool.supplies[OUTPUT_TOKEN]);
+          const fee = BigInt(pool.fee);
+          const amountWithFee = amountIn * (10000n - fee);
+          const denominator = inputReserve * 10000n + amountWithFee;
+          const amountOut = denominator > 0n ? amountWithFee * outputReserve / denominator : 0n;
+          if (inputReserve <= 0n || outputReserve <= 0n || amountOut <= 0n) return null;
+          const minimumOut = amountOut * BigInt(10000 - slippageBps) / 10000n;
+          return {
+            poolId: String(pool.id),
+            fee: Number(pool.fee),
+            state: "Quote available",
+            amountOut: amountOut.toString(),
+            minimumOut: minimumOut.toString(),
+            amountOutFormatted: formatBaseUnits(amountOut.toString(), 8),
+            inputReserve: inputReserve.toString(),
+            outputReserve: outputReserve.toString(),
+          };
+        }).filter((item): item is NonNullable<typeof item> => item !== null);
+
+        simpleQuotes.sort((a, b) =>
+          BigInt(a.amountOut) > BigInt(b.amountOut) ? -1 :
+          BigInt(a.amountOut) < BigInt(b.amountOut) ? 1 : 0
+        );
+
+        if (simpleQuotes.length) {
+          return Response.json({
+            available: true,
+            network: "testnet",
+            dex: "Ref Finance",
+            protocol: "ref-v1",
+            exchangeContract: REF_EXCHANGE_CONTRACT,
+            accountId,
+            amountIn,
+            amountInFormatted: formatBaseUnits(amountIn, 24),
+            inputToken: { contractId: INPUT_TOKEN, symbol: inputMeta.symbol, decimals: inputMeta.decimals },
+            outputToken: { contractId: OUTPUT_TOKEN, symbol: outputMeta.symbol, decimals: outputMeta.decimals },
+            inputRegistered: inputStorage !== null,
+            outputRegistered: outputStorage !== null,
+            outputStorageMinimum: outputBounds.min,
+            slippageBps,
+            bestQuote: simpleQuotes[0],
+            alternatives: simpleQuotes,
+            poolCount: simpleQuotes.length,
+            checkedAt: new Date().toISOString(),
+          }, { headers: { "Cache-Control": "no-store" } });
+        }
+      }
+    } catch {
+      // Fall through to the direct DCL quote check if the indexer is unavailable.
+    }
+
     // Follow Ref Finance SDK's DCLSwapByInputOnBestPool pattern:
     // derive each supported pool ID and call quote directly. Do not scan list_pools.
     const feeTiers = [100, 400, 2000, 10000];
@@ -166,7 +244,8 @@ export async function POST(request: Request) {
       available: true,
       network: "testnet",
       dex: "Ref Finance",
-      exchangeContract: "ref-finance-101.testnet",
+      protocol: "ref-dcl-v2",
+      exchangeContract: REF_EXCHANGE_CONTRACT,
       dclContract: REF_DCL_CONTRACT,
       accountId,
       amountIn,
