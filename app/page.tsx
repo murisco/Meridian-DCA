@@ -187,7 +187,6 @@ export default function Home() {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [assetsLoading, setAssetsLoading] = useState(true);
   const [assetError, setAssetError] = useState("");
-  const [assetSearch, setAssetSearch] = useState("");
   const [originAssetId, setOriginAssetId] = useState("");
   const [destinationAssetId, setDestinationAssetId] = useState("");
   const [amount, setAmount] = useState("");
@@ -300,18 +299,6 @@ export default function Home() {
       setStorageWarning("This browser blocked local storage. Keep this tab open; this plan may not survive a refresh.");
     }
   }, [plans, storageReady]);
-
-  const visibleAssets = useMemo(() => {
-    const query = assetSearch.trim().toLowerCase();
-    const list = query
-      ? assets.filter((asset) =>
-          (asset.symbol + " " + asset.blockchain).toLowerCase().includes(query) ||
-          asset.assetId === originAssetId ||
-          asset.assetId === destinationAssetId
-        )
-      : assets;
-    return list;
-  }, [assets, assetSearch, originAssetId, destinationAssetId]);
 
   const origin = assets.find((asset) => asset.assetId === originAssetId);
   const destination = assets.find((asset) => asset.assetId === destinationAssetId);
@@ -675,16 +662,11 @@ export default function Home() {
           {assetError && <div className="alert error">{assetError} <button type="button" onClick={() => window.location.reload()}>Retry</button></div>}
 
           <form onSubmit={previewQuote}>
-            <div className="field">
-              <label htmlFor="asset-search">FIND AN ASSET</label>
-              <input id="asset-search" value={assetSearch} onChange={(event) => setAssetSearch(event.target.value)} placeholder="Search by token or network, e.g. USDC, ethereum…" />
-            </div>
-
             <div className="asset-grid">
               <div className="field">
                 <label htmlFor="origin">I WANT TO INVEST WITH</label>
                 <select id="origin" value={originAssetId} onChange={(event) => { const next = event.target.value; setOriginAssetId(next); if (next === destinationAssetId) setDestinationAssetId(assets.find((asset) => asset.assetId !== next)?.assetId || ""); setQuoteResult(null);   setLiveSwapStatus(""); setLiveSwapMessage(""); }} disabled={assetsLoading || !assets.length}>
-                  {visibleAssets.map((asset) => <option key={asset.assetId} value={asset.assetId}>{asset.symbol} · {asset.blockchain.toUpperCase()}</option>)}
+                  {assets.map((asset) => <option key={asset.assetId} value={asset.assetId}>{asset.symbol} · {asset.blockchain.toUpperCase()}</option>)}
                 </select>
                 {origin && <span className="field-hint">{origin.blockchain.toUpperCase()} network · {origin.decimals} decimals</span>}
               </div>
@@ -692,7 +674,7 @@ export default function Home() {
               <div className="field">
                 <label htmlFor="destination">I WANT TO ACCUMULATE</label>
                 <select id="destination" value={destinationAssetId} onChange={(event) => { setDestinationAssetId(event.target.value); setRecipient(""); setQuoteResult(null); setLiveSwapQuote(null); setLiveSwapStatus(""); setLiveSwapMessage(""); }} disabled={assetsLoading || !assets.length}>
-                  {visibleAssets.filter((asset) => asset.assetId !== originAssetId).map((asset) => <option key={asset.assetId} value={asset.assetId}>{asset.symbol} · {asset.blockchain.toUpperCase()}</option>)}
+                  {assets.filter((asset) => asset.assetId !== originAssetId).map((asset) => <option key={asset.assetId} value={asset.assetId}>{asset.symbol} · {asset.blockchain.toUpperCase()}</option>)}
                 </select>
                 {destination && <span className="field-hint">{destination.blockchain.toUpperCase()} network · {destination.decimals} decimals</span>}
               </div>
