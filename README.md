@@ -41,7 +41,7 @@ The application uses the NEAR Intents 1Click API as its cross-chain quote and ro
 
 The user-selected slippage is sent as `slippageTolerance` in basis points (100 = 1%). The quote response's `amountOut` and `minAmountOut` are used for the saved-plan dry-run check. The quote request also includes a three-minute deadline.
 
-See the official [1Click quickstart](https://docs.agentsonintents.com/integration/distribution-channels/1click-api/quickstart/making-a-request) and [NEAR Hackathon Unstoppable DeFi prompt](https://github.com/nearai/near-hackathon-prompt-examples/blob/main/tracks/01-defi.md).
+The implementation follows the [NEAR Intents agent skill](https://github.com/near/agent-skills/tree/main/skills/near-intents) for the token catalogue and quote API path, together with the official [1Click quickstart](https://docs.agentsonintents.com/integration/distribution-channels/1click-api/quickstart/making-a-request) and [NEAR Hackathon Unstoppable DeFi prompt](https://github.com/nearai/near-hackathon-prompt-examples/blob/main/tracks/01-defi.md). The skill's committed-quote, deposit, and status-tracking stages are intentionally not enabled in this dry-run prototype.
 
 ## Safety boundary and limitations
 
