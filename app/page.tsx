@@ -239,6 +239,17 @@ export default function Home() {
   }, [network]);
 
   useEffect(() => {
+    function handleWalletAccount(event: Event) {
+      const detail = (event as CustomEvent<{ accountId?: string }>).detail;
+      if (!detail?.accountId) return;
+      setRecipient(detail.accountId);
+      setRefundTo(detail.accountId);
+    }
+    window.addEventListener("meridian:wallet-account", handleWalletAccount);
+    return () => window.removeEventListener("meridian:wallet-account", handleWalletAccount);
+  }, []);
+
+  useEffect(() => {
     function handleSwapUpdate(event: Event) {
       const detail = (event as CustomEvent<{ status?: string; message?: string }>).detail;
       setLiveSwapStatus(detail?.status || "");
