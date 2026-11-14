@@ -193,6 +193,7 @@ export default function Home() {
   const [amount, setAmount] = useState("");
   const [recipient, setRecipient] = useState("");
   const [refundTo, setRefundTo] = useState("");
+  const [walletAccountId, setWalletAccountId] = useState("");
   const [slippage, setSlippage] = useState("100");
   const [frequency, setFrequency] = useState<Plan["frequency"]>("Weekly");
   const [quoteResult, setQuoteResult] = useState<QuoteResult | null>(null);
@@ -207,9 +208,6 @@ export default function Home() {
   const [liveSwapStatus, setLiveSwapStatus] = useState("");
   const [liveSwapMessage, setLiveSwapMessage] = useState("");
   const [liveSwapPreparing, setLiveSwapPreparing] = useState(false);
-  const [refRouteQuote, setRefRouteQuote] = useState<any>(null);
-  const [refRouteLoading, setRefRouteLoading] = useState(false);
-  const [refRouteError, setRefRouteError] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -242,7 +240,7 @@ export default function Home() {
     function handleWalletAccount(event: Event) {
       const detail = (event as CustomEvent<{ accountId?: string }>).detail;
       if (!detail?.accountId) return;
-      setRecipient(detail.accountId);
+      setWalletAccountId(detail.accountId);
       setRefundTo(detail.accountId);
     }
     window.addEventListener("meridian:wallet-account", handleWalletAccount);
@@ -317,6 +315,13 @@ export default function Home() {
 
   const origin = assets.find((asset) => asset.assetId === originAssetId);
   const destination = assets.find((asset) => asset.assetId === destinationAssetId);
+
+  useEffect(() => {
+    if (!walletAccountId) return;
+    setRefundTo(walletAccountId);
+    setRecipient(destination?.blockchain === "near" ? walletAccountId : "");
+  }, [walletAccountId, destination?.blockchain]);
+
   const quoteData = quoteResult?.quote?.quote || quoteResult?.quote;
   const quoteSlippageCheck = quoteData
     ? assessSlippage(quoteData.amountOut, quoteData.minAmountOut, Number(slippage))
@@ -364,10 +369,11 @@ export default function Home() {
     setLiveSwapMessage("Creating a fresh executable testnet quote. No funds are moving yet.");
     try {
       if (network !== "testnet") throw new Error("Live swap execution is disabled on mainnet.");
-      if (!origin || !destination || origin.blockchain !== "near" || destination.blockchain !== "near") {
-        throw new Error("The first live-swap release supports NEAR testnet assets only.");
+      if (!origin || !destination || origin.blockchain !== "near") {
+        throw new Error("Choose a NEAR testnet source token. The destination can be on another supported testnet chain.");
       }
-      if (!recipient.trim() || !refundTo.trim()) throw new Error("Enter your wallet address in both recipient and refund fields.");
+      if (!recipient.trim()) throw new Error("Enter an address for the selected " + destination.blockchain.toUpperCase() + " destination network.");
+      if (!refundTo.trim()) throw new Error("Connect your NEAR testnet wallet so the source refund address is set.");
       const response = await fetch("/api/swap/quote", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -395,67 +401,6 @@ export default function Home() {
     } finally {
       setLiveSwapPreparing(false);
     }
-  }
-
-  async function prepareRefFinanceQuote() {
-    setRefRouteError("");
-    setRefRouteQuote(null);
-    setRefRouteLoading(true);
-    setLiveSwapStatus("");
-    setLiveSwapMessage("");
-    try {
-      if (network !== "testnet") throw new Error("Ref Finance route is only available on NEAR testnet.");
-      if (origin?.symbol.toUpperCase() !== "WNEAR") {
-        throw new Error("For the immediate Ref Finance purchase, select wNEAR as the source asset. The Ref route buys USDT.e directly.");
-      }
-      if (!amount.trim()) throw new Error("Enter the wNEAR amount you want to swap.");
-      if (!recipient.trim()) throw new Error("Connect your NEAR testnet wallet and use its address as the recipient.");
-      const response = await fetch("/api/ref/quote", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          accountId: recipient.trim(),
-          amount,
-          slippageBps: Number(slippage),
-        }),
-      });
-      const data = await response.json();
-      if (!response.ok || data.available !== true) throw new Error(data.error || "No Ref Finance route is currently available.");
-      setRefRouteQuote(data);
-    } catch (error) {
-      setRefRouteError(error instanceof Error ? error.message : "Could not check the Ref Finance testnet route.");
-    } finally {
-      setRefRouteLoading(false);
-    }
-  }
-
-  function executeRefFinanceSwap() {
-    if (!refRouteQuote) return;
-    if (refRouteQuote.accountId !== recipient.trim()) {
-      setRefRouteError("Wallet account changed. Check the route again before swapping.");
-      return;
-    }
-    if (Date.now() - Date.parse(refRouteQuote.checkedAt) > 60000) {
-      setRefRouteError("This quote is more than one minute old. Check the route again before approving.");
-      setRefRouteQuote(null);
-      return;
-    }
-    setLiveSwapStatus("AWAITING_WALLET");
-    setLiveSwapMessage("Waiting for your wallet to approve the USDT.e registration (if needed) and swap.");
-    window.dispatchEvent(new CustomEvent("meridian:execute-ref-swap", {
-      detail: {
-        accountId: refRouteQuote.accountId,
-        amountIn: refRouteQuote.amountIn,
-        minimumOut: refRouteQuote.bestQuote.minimumOut,
-        poolId: refRouteQuote.bestQuote.poolId,
-        protocol: refRouteQuote.protocol === "ref-v1" ? "ref-v1" : "ref-dcl-v2",
-        inputRegistered: refRouteQuote.inputRegistered,
-        outputRegistered: refRouteQuote.outputRegistered,
-        outputStorageMinimum: refRouteQuote.outputStorageMinimum,
-        outputContractId: refRouteQuote.outputToken.contractId,
-        outputSymbol: refRouteQuote.outputToken.symbol,
-      },
-    }));
   }
 
   function approveFirstSwap() {
@@ -495,10 +440,10 @@ export default function Home() {
     }
     const newPlan: Plan = {
       id: window.crypto?.randomUUID?.() || String(Date.now()),
-      sourceAssetId: network === "testnet" && liveSwapStatus === "SUCCESS" ? "wrap.testnet" : origin.assetId,
-      destinationAssetId: network === "testnet" && liveSwapStatus === "SUCCESS" ? "usdt.fakes.testnet" : destination.assetId,
-      sourceSymbol: network === "testnet" && liveSwapStatus === "SUCCESS" ? "wNEAR" : origin.symbol,
-      destinationSymbol: network === "testnet" && liveSwapStatus === "SUCCESS" ? "USDT.e" : destination.symbol,
+      sourceAssetId: origin.assetId,
+      destinationAssetId: destination.assetId,
+      sourceSymbol: origin.symbol,
+      destinationSymbol: destination.symbol,
       sourceChain: origin.blockchain,
       destinationChain: destination.blockchain,
       amount,
@@ -720,11 +665,11 @@ export default function Home() {
 
           <div className="network-switcher">
             <label htmlFor="quote-network">QUOTE PREVIEW SOURCE</label>
-            <select id="quote-network" value={network} onChange={(event) => { setNetwork(event.target.value as IntentNetwork); setQuoteResult(null); setQuoteError(""); setRefRouteQuote(null); setRefRouteError(""); setLiveSwapStatus(""); setLiveSwapMessage(""); setAssetSearch(""); }}>
+            <select id="quote-network" value={network} onChange={(event) => { setNetwork(event.target.value as IntentNetwork); setQuoteResult(null); setQuoteError("");   setLiveSwapStatus(""); setLiveSwapMessage(""); setAssetSearch(""); }}>
               <option value="testnet">Testnet sandbox · Tidepool</option>
               <option value="mainnet">Mainnet · NEAR Intents 1Click</option>
             </select>
-            <span>{network === "testnet" ? "Tidepool is used for quote previews. Your immediate wNEAR → USDT.e purchase uses the verified Ref Finance pool below." : "Official 1Click mainnet · dry-run quote only · no funds moved"}</span>
+            <span>{network === "testnet" ? "Tidepool provides testnet routes from NEAR to supported destination networks. Mainnet stays preview-only." : "Official 1Click mainnet · dry-run quote only · no funds moved"}</span>
           </div>
 
           {assetError && <div className="alert error">{assetError} <button type="button" onClick={() => window.location.reload()}>Retry</button></div>}
@@ -738,7 +683,7 @@ export default function Home() {
             <div className="asset-grid">
               <div className="field">
                 <label htmlFor="origin">I WANT TO INVEST WITH</label>
-                <select id="origin" value={originAssetId} onChange={(event) => { const next = event.target.value; setOriginAssetId(next); if (next === destinationAssetId) setDestinationAssetId(assets.find((asset) => asset.assetId !== next)?.assetId || ""); setQuoteResult(null); setRefRouteQuote(null); setRefRouteError(""); setLiveSwapStatus(""); setLiveSwapMessage(""); }} disabled={assetsLoading || !assets.length}>
+                <select id="origin" value={originAssetId} onChange={(event) => { const next = event.target.value; setOriginAssetId(next); if (next === destinationAssetId) setDestinationAssetId(assets.find((asset) => asset.assetId !== next)?.assetId || ""); setQuoteResult(null);   setLiveSwapStatus(""); setLiveSwapMessage(""); }} disabled={assetsLoading || !assets.length}>
                   {visibleAssets.map((asset) => <option key={asset.assetId} value={asset.assetId}>{asset.symbol} · {asset.blockchain.toUpperCase()}</option>)}
                 </select>
                 {origin && <span className="field-hint">{origin.blockchain.toUpperCase()} network · {origin.decimals} decimals</span>}
@@ -746,7 +691,7 @@ export default function Home() {
               <div className="swap-arrow">→</div>
               <div className="field">
                 <label htmlFor="destination">I WANT TO ACCUMULATE</label>
-                <select id="destination" value={destinationAssetId} onChange={(event) => { setDestinationAssetId(event.target.value); setQuoteResult(null); setRefRouteQuote(null); setRefRouteError(""); setLiveSwapStatus(""); setLiveSwapMessage(""); }} disabled={assetsLoading || !assets.length}>
+                <select id="destination" value={destinationAssetId} onChange={(event) => { setDestinationAssetId(event.target.value); setRecipient(""); setQuoteResult(null); setLiveSwapQuote(null); setLiveSwapStatus(""); setLiveSwapMessage(""); }} disabled={assetsLoading || !assets.length}>
                   {visibleAssets.filter((asset) => asset.assetId !== originAssetId).map((asset) => <option key={asset.assetId} value={asset.assetId}>{asset.symbol} · {asset.blockchain.toUpperCase()}</option>)}
                 </select>
                 {destination && <span className="field-hint">{destination.blockchain.toUpperCase()} network · {destination.decimals} decimals</span>}
@@ -755,56 +700,56 @@ export default function Home() {
 
             <div className="field amount-field">
               <label htmlFor="amount">AMOUNT TO BUY NOW / PER BUY</label>
-              <div className="input-suffix"><input id="amount" inputMode="decimal" value={amount} onChange={(event) => { setAmount(event.target.value); setQuoteResult(null); setRefRouteQuote(null); setRefRouteError(""); setLiveSwapStatus(""); setLiveSwapMessage(""); }} placeholder="Enter amount, e.g. 0.01" /><span>{origin?.symbol || "TOKEN"}</span></div>
+              <div className="input-suffix"><input id="amount" inputMode="decimal" value={amount} onChange={(event) => { setAmount(event.target.value); setQuoteResult(null);   setLiveSwapStatus(""); setLiveSwapMessage(""); }} placeholder="Enter amount, e.g. 0.01" /><span>{origin?.symbol || "TOKEN"}</span></div>
               <span className="field-hint">For testnet, enter up to 3 wNEAR. The quote checks the available pool before any wallet approval.</span>
             </div>
 
             <div className="field">
               <label htmlFor="recipient">DESTINATION WALLET ADDRESS</label>
-              <input id="recipient" value={recipient} onChange={(event) => { setRecipient(event.target.value); setQuoteResult(null); setRefRouteQuote(null); setRefRouteError(""); setLiveSwapStatus(""); setLiveSwapMessage(""); }} placeholder="Address on the destination network" autoComplete="off" />
-              <span className="field-hint">The address that should receive the purchased asset.</span>
+              <input id="recipient" value={recipient} onChange={(event) => { setRecipient(event.target.value); setQuoteResult(null); setLiveSwapQuote(null); setLiveSwapStatus(""); setLiveSwapMessage(""); }} placeholder={destination ? "Enter " + destination.blockchain.toUpperCase() + " testnet address" : "Address on the destination network"} autoComplete="off" />
+              <span className="field-hint">{destination ? "This address receives " + destination.symbol + " on " + destination.blockchain.toUpperCase() + ". Use an address for that network." : "The address that should receive the purchased asset."}</span>
             </div>
             <div className="field">
               <label htmlFor="refund">REFUND WALLET ADDRESS</label>
-              <input id="refund" value={refundTo} onChange={(event) => { setRefundTo(event.target.value); setQuoteResult(null); }} placeholder="Address on the source network" autoComplete="off" />
+              <input id="refund" value={refundTo} onChange={(event) => { setRefundTo(event.target.value); setQuoteResult(null); setLiveSwapQuote(null); setLiveSwapStatus(""); setLiveSwapMessage(""); }} placeholder="Your connected NEAR testnet wallet" autoComplete="off" />
               <span className="field-hint">Used by the routing service if a future swap cannot complete.</span>
             </div>
 
             <div className="field">
               <div className="label-with-value"><label htmlFor="slippage">MAXIMUM SLIPPAGE</label><strong>{(Number(slippage) / 100).toFixed(2)}%</strong></div>
-              <input className="range-input" id="slippage" type="range" min="10" max="500" step="10" value={slippage} onChange={(event) => { setSlippage(event.target.value); setQuoteResult(null); setRefRouteQuote(null); setRefRouteError(""); }} />
+              <input className="range-input" id="slippage" type="range" min="10" max="500" step="10" value={slippage} onChange={(event) => { setSlippage(event.target.value); setQuoteResult(null);   }} />
               <div className="range-labels"><span>0.10%</span><span>5.00%</span></div>
             </div>
 
             {network === "testnet" && (
             <div className="ref-direct-panel investment-buy-panel">
-            <div className="ref-direct-heading"><strong>MAKE YOUR FIRST BUY NOW</strong><span>REF FINANCE · TESTNET</span></div>
-            <p className="live-swap-note">This buy uses your connected wallet's <strong>wrap.testnet wNEAR</strong> and the verified Ref Finance testnet <strong>USDT.e</strong> pool. Select wNEAR as the source above. The destination selector only affects the separate Tidepool quote preview.</p>
-            <div className="quote-detail"><span>Swap pair</span><strong>wNEAR → USDT.e</strong></div>
-            <div className="quote-detail"><span>Input amount</span><strong>{amount || "—"} wNEAR</strong></div>
-            <div className="quote-detail"><span>Wallet account</span><strong>{recipient.trim() || "Enter wallet address above"}</strong></div>
-            {!refRouteQuote ? (
-            <button className="button button-primary full-button" type="button" onClick={prepareRefFinanceQuote} disabled={refRouteLoading || !amount.trim() || origin?.symbol.toUpperCase() !== "WNEAR" || !recipient.trim()}>
-            {refRouteLoading ? "Getting swap quote…" : "Preview immediate swap"}
-            </button>
-            ) : (
-            <>
-            <div className="quote-detail"><span>Estimated {refRouteQuote.outputToken.symbol} output</span><strong>{refRouteQuote.bestQuote.amountOutFormatted} {refRouteQuote.outputToken.symbol}</strong></div>
-            <div className="quote-detail"><span>Minimum received</span><strong>{formatBaseUnits(refRouteQuote.bestQuote.minimumOut, refRouteQuote.outputToken.decimals)} {refRouteQuote.outputToken.symbol}</strong></div>
-            <div className="quote-detail"><span>Pool fee</span><strong>{(refRouteQuote.bestQuote.fee / 10000).toFixed(2)}%</strong></div>
-            <div className="quote-detail"><span>Route</span><strong>{refRouteQuote.protocol === "ref-v1" ? "Ref classic exchange" : "Ref DCL v2"}</strong></div>
-                    <div className="quote-detail"><span>Pool ID</span><strong className="reference">{refRouteQuote.bestQuote.poolId}</strong></div>
-            <div className="quote-detail"><span>{refRouteQuote.outputToken.symbol} wallet registration</span><strong>{refRouteQuote.outputRegistered ? "Already registered" : "Required before swap"}</strong></div>
-            {!refRouteQuote.outputRegistered && <p className="fee-note">Your wallet will first ask you to register the {refRouteQuote.outputToken.symbol} token account with a one-time storage deposit of {formatBaseUnits(refRouteQuote.outputStorageMinimum, 24)} NEAR. The swap is a separate approval.</p>}
-            <button className="button button-primary full-button" type="button" onClick={executeRefFinanceSwap} disabled={["AWAITING_WALLET","REGISTERING_OUTPUT","SUBMITTED","PENDING","SUCCESS"].includes(liveSwapStatus)}>
-            Approve and swap now
-            </button>
-            <button className="button button-secondary full-button" type="button" onClick={() => { setRefRouteQuote(null); setLiveSwapStatus(""); setLiveSwapMessage(""); }}>Discard Ref quote</button>
-            </>
-            )}
-            {refRouteError && <div className="swap-execution-state error" role="alert"><strong>ROUTE CHECK</strong><span>{refRouteError}</span></div>}
-            {liveSwapStatus && <div className={"swap-execution-state " + (liveSwapStatus === "SUCCESS" ? "success" : liveSwapStatus === "ERROR" ? "error" : "")} role="status" aria-live="polite"><strong>{liveSwapStatus.replaceAll("_", " ")}</strong><span>{liveSwapMessage}</span></div>}
-            <p className="fee-note">This is a one-time purchase. After it succeeds, choose <strong>Save recurring plan</strong> below to keep a separate daily, weekly or monthly plan.</p>
+              <div className="ref-direct-heading"><strong>MAKE YOUR FIRST BUY NOW</strong><span>NEAR INTENTS · TESTNET</span></div>
+              <p className="live-swap-note">This purchase uses the exact assets selected above. Your NEAR wallet approves the source-token deposit; Tidepool routes the payout to the destination chain. Testnet assets have no monetary value.</p>
+              <div className="quote-detail"><span>Swap pair</span><strong>{origin?.symbol || "Choose source"} → {destination?.symbol || "Choose destination"}</strong></div>
+              <div className="quote-detail"><span>Source network</span><strong>{origin?.blockchain.toUpperCase() || "—"}</strong></div>
+              <div className="quote-detail"><span>Destination network</span><strong>{destination?.blockchain.toUpperCase() || "—"}</strong></div>
+              <div className="quote-detail"><span>Input amount</span><strong>{amount || "—"} {origin?.symbol || ""}</strong></div>
+              <div className="quote-detail"><span>Destination address</span><strong>{recipient.trim() || (destination ? "Enter " + destination.blockchain.toUpperCase() + " address above" : "Choose a destination")}</strong></div>
+              {origin?.blockchain !== "near" && <div className="swap-execution-state error"><strong>NEAR SOURCE REQUIRED</strong><span>Choose a NEAR testnet source token for this wallet-approved demo.</span></div>}
+              {!liveSwapQuote ? (
+                <button className="button button-primary full-button" type="button" onClick={prepareFirstSwap} disabled={liveSwapPreparing || !origin || !destination || origin.blockchain !== "near" || !amount.trim() || !recipient.trim() || !refundTo.trim()}>
+                  {liveSwapPreparing ? "Preparing live route…" : "Preview selected swap"}
+                </button>
+              ) : (
+                <>
+                  <div className="quote-detail"><span>Estimated {destination?.symbol} output</span><strong>{liveSwapQuote.quote?.quote?.amountOutFormatted || "—"} {destination?.symbol}</strong></div>
+                  <div className="quote-detail"><span>Minimum received</span><strong>{liveSwapQuote.quote?.quote?.minAmountOut ? formatBaseUnits(liveSwapQuote.quote.quote.minAmountOut, destination?.decimals || 0) : "Not provided"} {destination?.symbol}</strong></div>
+                  <div className="quote-detail"><span>Estimated settlement</span><strong>{typeof liveSwapQuote.quote?.quote?.timeEstimate === "number" ? Math.max(1, Math.round(liveSwapQuote.quote.quote.timeEstimate / 60)) + " min" : "Provider estimate unavailable"}</strong></div>
+                  <div className="quote-detail"><span>Route provider</span><strong>Tidepool testnet</strong></div>
+                  {liveSwapQuote.quote?.quote?.deadline && <div className="quote-detail"><span>Quote expires</span><strong>{formatDate(liveSwapQuote.quote.quote.deadline)}</strong></div>}
+                  <button className="button button-primary full-button" type="button" onClick={approveFirstSwap} disabled={["AWAITING_WALLET","DEPOSIT_SUBMITTED","PROCESSING","SUCCESS","PENDING"].includes(liveSwapStatus)}>
+                    Approve deposit & execute
+                  </button>
+                  <button className="button button-secondary full-button" type="button" onClick={() => { setLiveSwapQuote(null); setLiveSwapStatus(""); setLiveSwapMessage(""); }}>Discard quote</button>
+                </>
+              )}
+              {liveSwapStatus && <div className={"swap-execution-state " + (liveSwapStatus === "SUCCESS" ? "success" : liveSwapStatus === "ERROR" || ["FAILED","REFUNDED","EXPIRED"].includes(liveSwapStatus) ? "error" : "")} role="status" aria-live="polite"><strong>{liveSwapStatus.replaceAll("_", " ")}</strong><span>{liveSwapMessage}</span></div>}
+              <p className="fee-note">The payout follows your selected destination asset and network. Save your recurring plan after a successful first buy; saved plans are local reminders and do not yet run automatically.</p>
             </div>
             )}
 
@@ -827,7 +772,7 @@ export default function Home() {
               </button>
               <button className="button button-secondary" type="button" onClick={createPlan} disabled={assetsLoading || !origin || !destination || !amount.trim() || (network === "testnet" && liveSwapStatus !== "SUCCESS")}>Save recurring plan</button>
             </div>
-            {network === "testnet" && liveSwapStatus !== "SUCCESS" && <p className="form-footnote">Complete your first wNEAR → USDT.e purchase above to unlock saving the recurring plan.</p>}
+            {network === "testnet" && liveSwapStatus !== "SUCCESS" && <p className="form-footnote">Complete your selected testnet first buy above to unlock saving the recurring plan.</p>}
             {planSaveMessage && <div className="plan-save-success" role="status" aria-live="polite"><strong>✓ Plan saved successfully</strong><span>{planSaveMessage}</span><a href="#plans">View saved plan ↓</a></div>}
             {storageWarning && <div className="alert error" role="alert">{storageWarning}</div>}
             <p className="form-footnote"><span>ⓘ</span> Saving a plan stores a reminder in this browser. It does not schedule or execute a blockchain transaction.</p>
