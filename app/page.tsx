@@ -184,6 +184,8 @@ export default function Home() {
   const [quoteError, setQuoteError] = useState("");
   const [plans, setPlans] = useState<Plan[]>([]);
   const [checkingPlanId, setCheckingPlanId] = useState<string | null>(null);
+  const [planSaveMessage, setPlanSaveMessage] = useState("");
+  const [storageWarning, setStorageWarning] = useState("");
   const [storageReady, setStorageReady] = useState(false);
 
   useEffect(() => {
@@ -238,7 +240,13 @@ export default function Home() {
   }, [assets, originAssetId, destinationAssetId]);
 
   useEffect(() => {
-    if (storageReady) window.localStorage.setItem(PLANS_KEY, JSON.stringify(plans));
+    if (!storageReady) return;
+    try {
+      window.localStorage.setItem(PLANS_KEY, JSON.stringify(plans));
+      setStorageWarning("");
+    } catch {
+      setStorageWarning("This browser blocked local storage. Keep this tab open; this plan may not survive a refresh.");
+    }
   }, [plans, storageReady]);
 
   const visibleAssets = useMemo(() => {
@@ -291,6 +299,8 @@ export default function Home() {
   }
 
   function createPlan() {
+    setPlanSaveMessage("");
+    setQuoteError("");
     if (!origin || !destination || !amount || !recipient.trim() || !refundTo.trim()) {
       setQuoteError("Choose both assets and enter the amount, destination and refund addresses before saving a plan.");
       return;
@@ -319,6 +329,7 @@ export default function Home() {
     };
     setPlans((current) => [newPlan, ...current]);
     setQuoteError("");
+    setPlanSaveMessage("Saved " + newPlan.sourceSymbol + " → " + newPlan.destinationSymbol + " · " + newPlan.amount + " " + newPlan.sourceSymbol + " · " + newPlan.frequency.toLowerCase() + ". This is a local reminder, not an automated purchase.");
   }
 
   function removePlan(id: string) {
@@ -547,6 +558,8 @@ export default function Home() {
               </button>
               <button className="button button-secondary" type="button" onClick={createPlan} disabled={assetsLoading || !origin || !destination}>Save recurring plan</button>
             </div>
+            {planSaveMessage && <div className="plan-save-success" role="status" aria-live="polite"><strong>✓ Plan saved successfully</strong><span>{planSaveMessage}</span><a href="#plans">View saved plan ↓</a></div>}
+            {storageWarning && <div className="alert error" role="alert">{storageWarning}</div>}
             <p className="form-footnote"><span>ⓘ</span> Saving a plan stores a reminder in this browser. It does not schedule or execute a blockchain transaction.</p>
           </form>
         </div>
