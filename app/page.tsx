@@ -224,6 +224,7 @@ export default function Home() {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Quote request failed.");
+      if (data.dry !== true) throw new Error("Safety check failed: MERIDIAN only accepts dry-run quote responses.");
       setQuoteResult(data as QuoteResult);
     } catch (error) {
       setQuoteError(error instanceof Error ? error.message : "Unable to preview this route.");
