@@ -187,33 +187,64 @@ export async function POST(request: Request) {
       // Fall through to the direct DCL quote check if the indexer is unavailable.
     }
 
-    // Follow Ref Finance SDK's DCLSwapByInputOnBestPool pattern:
-    // derive each supported pool ID and call quote directly. Do not scan list_pools.
-    const feeTiers = [100, 400, 2000, 10000];
-    const quoteChecks = await Promise.all(feeTiers.map(async (fee) => {
-      const poolId = [INPUT_TOKEN, OUTPUT_TOKEN].sort().join("|") + "|" + fee;
+    // Discover the DCL pools that actually exist on Ref testnet.
+    // Ref SDK's listDCLPools() calls list_pools with no arguments.
+    let dclPools: any[] = [];
+    let dclDiscoveryError: string | null = null;
+    try {
+      const discovered = await view(REF_DCL_CONTRACT, "list_pools");
+      if (!Array.isArray(discovered)) {
+        throw new Error("Ref DCL list_pools did not return a pool array.");
+      }
+      dclPools = discovered;
+    } catch (error) {
+      dclDiscoveryError = error instanceof Error ? error.message : "Unable to list Ref DCL pools.";
+    }
+
+    const matchingDclPools = dclPools.filter((pool) => {
+      const tokenX = String(pool.token_x || "");
+      const tokenY = String(pool.token_y || "");
+      const pairMatches =
+        (tokenX === INPUT_TOKEN && tokenY === OUTPUT_TOKEN) ||
+        (tokenX === OUTPUT_TOKEN && tokenY === INPUT_TOKEN);
+      return pairMatches && String(pool.state || "").toLowerCase() === "running" &&
+        typeof pool.pool_id === "string";
+    });
+
+    const quoteChecks = await Promise.all(matchingDclPools.map(async (pool) => {
+      const poolId = String(pool.pool_id);
       try {
+        // The Ref SDK passes token contract IDs to the on-chain view method.
+        // Its public helper accepts metadata but converts metadata.id before RPC.
         const quote = await view(REF_DCL_CONTRACT, "quote", {
           pool_ids: [poolId],
-          input_token: inputMeta,
-          output_token: outputMeta,
+          input_token: INPUT_TOKEN,
+          output_token: OUTPUT_TOKEN,
           input_amount: amountIn,
-          tag: "meridian-dca-" + fee + "-" + amountIn,
+          tag: "meridian-dca-" + pool.fee + "-" + amountIn,
         });
-        if (!quote || !/^\d+$/.test(String(quote.amount || "")) || BigInt(quote.amount) <= 0n) {
-          return { fee, poolId, quote: null, error: "No positive quote for this fee tier." };
+        if (!quote || !/^\\d+$/.test(String(quote.amount || "")) || BigInt(quote.amount) <= 0n) {
+          return {
+            fee: Number(pool.fee),
+            poolId,
+            quote: null,
+            error: "Ref returned no positive output for this discovered pool.",
+            liquidity: String(pool.liquidity || "0"),
+            totalX: String(pool.total_x || "0"),
+            totalY: String(pool.total_y || "0"),
+          };
         }
         const minimumOut = (BigInt(quote.amount) * BigInt(10000 - slippageBps) / 10000n).toString();
         return {
-          fee,
+          fee: Number(pool.fee),
           poolId,
           quote: {
             poolId,
-            fee,
-            state: "Quote available",
-            liquidity: "Not exposed by DCL quote",
-            totalX: "Not exposed by DCL quote",
-            totalY: "Not exposed by DCL quote",
+            fee: Number(pool.fee),
+            state: String(pool.state || "Running"),
+            liquidity: String(pool.liquidity || "0"),
+            totalX: String(pool.total_x || "0"),
+            totalY: String(pool.total_y || "0"),
             amountOut: String(quote.amount),
             minimumOut,
             amountOutFormatted: formatBaseUnits(String(quote.amount), 8),
@@ -221,7 +252,15 @@ export async function POST(request: Request) {
           error: null,
         };
       } catch (error) {
-        return { fee, poolId, quote: null, error: error instanceof Error ? error.message : "DCL quote failed." };
+        return {
+          fee: Number(pool.fee),
+          poolId,
+          quote: null,
+          error: error instanceof Error ? error.message : "DCL quote failed.",
+          liquidity: String(pool.liquidity || "0"),
+          totalX: String(pool.total_x || "0"),
+          totalY: String(pool.total_y || "0"),
+        };
       }
     }));
 
@@ -231,12 +270,29 @@ export async function POST(request: Request) {
       .sort((a, b) => BigInt(a.amountOut) > BigInt(b.amountOut) ? -1 : BigInt(a.amountOut) < BigInt(b.amountOut) ? 1 : 0);
 
     if (!validQuotes.length) {
+      const reason = matchingDclPools.length === 0
+        ? "Ref Finance has no running DCL pool for wrap.testnet → wbtc.fakes.testnet."
+        : "Ref Finance found " + matchingDclPools.length + " matching DCL pool(s), but none returned a usable quote.";
       return Response.json({
         available: false,
-        error: "Ref Finance returned no usable wNEAR/WBTC quote across its four supported DCL fee tiers. No transaction was sent.",
+        error: reason + " No transaction was sent.",
+        discovery: {
+          dclPoolCount: dclPools.length,
+          matchingDclPools: matchingDclPools.map((pool) => ({
+            poolId: pool.pool_id,
+            fee: pool.fee,
+            state: pool.state,
+            liquidity: pool.liquidity,
+            totalX: pool.total_x,
+            totalY: pool.total_y,
+          })),
+          dclDiscoveryError,
+          quoteChecks: quoteChecks.map(({fee,poolId,quote,error,liquidity,totalX,totalY}) => ({
+            fee, poolId, available: !!quote, error, liquidity, totalX, totalY
+          })),
+        },
         inputToken: { contractId: INPUT_TOKEN, symbol: inputMeta.symbol, decimals: inputMeta.decimals },
         outputToken: { contractId: OUTPUT_TOKEN, symbol: outputMeta.symbol, decimals: outputMeta.decimals },
-        quoteChecks: quoteChecks.map(({fee,poolId,quote,error}) => ({fee,poolId,available:!!quote,error})),
       }, { status: 404 });
     }
 
@@ -284,26 +340,45 @@ export async function GET() {
     }
   }));
 
-  const diagnosticInputMeta = metadataChecks[0].ok ? metadataChecks[0].data : null;
-  const diagnosticOutputMeta = metadataChecks[1].ok ? metadataChecks[1].data : null;
-  const amountIn = "10000000000000000000000"; // 0.01 wNEAR
-  const quoteChecks = await Promise.all([100, 400, 2000, 10000].map(async (fee) => {
-    if (!diagnosticInputMeta || !diagnosticOutputMeta) {
-      return { fee, poolId: [INPUT_TOKEN, OUTPUT_TOKEN].sort().join("|") + "|" + fee, ok: false, error: "Token metadata unavailable for DCL quote." };
-    }
-    const poolId = [INPUT_TOKEN, OUTPUT_TOKEN].sort().join("|") + "|" + fee;
-    try {
-      const quote = await view(REF_DCL_CONTRACT, "quote", {
-        pool_ids: [poolId],
-        input_token: diagnosticInputMeta,
-        output_token: diagnosticOutputMeta,
-        input_amount: amountIn,
-        tag: "meridian-diagnostic-" + fee,
-      });
-      return { fee, poolId, ok: !!quote && /^\d+$/.test(String(quote.amount || "")), amount: quote?.amount || null };
-    } catch (error) {
-      return { fee, poolId, ok: false, error: error instanceof Error ? error.message : "DCL quote failed." };
-    }
+  const [dclResult, classicResult] = await Promise.all([
+    view(REF_DCL_CONTRACT, "list_pools")
+      .then((data) => ({ ok: Array.isArray(data), pools: Array.isArray(data) ? data : [], error: null }))
+      .catch((error) => ({ ok: false, pools: [], error: error instanceof Error ? error.message : "DCL pool discovery failed." })),
+    fetch(REF_TESTNET_INDEXER + "/fetchAllPools", {
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+      signal: AbortSignal.timeout(12000),
+    })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Ref indexer returned HTTP " + response.status);
+        const data = await response.json() as { simplePools?: any[] };
+        return { ok: true, pools: Array.isArray(data.simplePools) ? data.simplePools : [], error: null };
+      })
+      .catch((error) => ({ ok: false, pools: [], error: error instanceof Error ? error.message : "Classic pool discovery failed." })),
+  ]);
+
+  const matchingDclPools = dclResult.pools.filter((pool) =>
+    ((pool.token_x === INPUT_TOKEN && pool.token_y === OUTPUT_TOKEN) ||
+     (pool.token_x === OUTPUT_TOKEN && pool.token_y === INPUT_TOKEN)) &&
+    String(pool.state || "").toLowerCase() === "running"
+  ).map((pool) => ({
+    poolId: pool.pool_id,
+    fee: pool.fee,
+    state: pool.state,
+    liquidity: pool.liquidity,
+    totalX: pool.total_x,
+    totalY: pool.total_y,
+  }));
+
+  const matchingClassicPools = classicResult.pools.filter((pool) =>
+    Array.isArray(pool.tokenIds) &&
+    pool.tokenIds.includes(INPUT_TOKEN) &&
+    pool.tokenIds.includes(OUTPUT_TOKEN)
+  ).map((pool) => ({
+    poolId: String(pool.id),
+    fee: pool.fee,
+    inputReserve: String(pool.supplies?.[INPUT_TOKEN] || "0"),
+    outputReserve: String(pool.supplies?.[OUTPUT_TOKEN] || "0"),
   }));
 
   return Response.json({
@@ -311,7 +386,20 @@ export async function GET() {
     rpc: RPC_URL,
     dclContract: REF_DCL_CONTRACT,
     metadataChecks,
-    quoteChecks,
+    poolDiscovery: {
+      dcl: {
+        ok: dclResult.ok,
+        totalPools: dclResult.pools.length,
+        matchingPools: matchingDclPools,
+        error: dclResult.error,
+      },
+      classic: {
+        ok: classicResult.ok,
+        totalPools: classicResult.pools.length,
+        matchingPools: matchingClassicPools,
+        error: classicResult.error,
+      },
+    },
     checkedAt: new Date().toISOString(),
   }, { headers: { "Cache-Control": "no-store" } });
 }
