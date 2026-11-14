@@ -184,7 +184,7 @@ export default function WalletConnect() {
         actions,
       });
 
-      const outcome = result as { status?: { Failure?: unknown }; transaction?: { hash?: string }; transaction_outcome?: { id?: string } } | undefined;
+      const outcome = result as unknown as { status?: { Failure?: unknown }; transaction?: { hash?: string }; transaction_outcome?: { id?: string } } | undefined;
       if (outcome?.status?.Failure) {
         throw new Error("The testnet wrapper transaction failed: " + JSON.stringify(outcome.status.Failure));
       }
