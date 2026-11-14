@@ -187,10 +187,9 @@ export async function POST(request: Request) {
       // Fall through to the direct DCL quote check if the indexer is unavailable.
     }
 
-    // The testnet indexer may omit older classic pools. Verify the known
-    // wNEAR/USDT.e classic pool directly against the live exchange contract.
-    // Pool 34 has a historical successful testnet swap, but we only quote it
-    // when current on-chain state confirms the exact pair and positive reserves.
+    // The testnet indexer may omit older classic pools. Query the documented
+    // Ref exchange get_pools(from_index, limit) view directly. Classic exchange
+    // does NOT use the DCL get_pool(pool_id) view method.
     let classicPoolCheck: Record<string, unknown> = {
       poolId: 34,
       found: false,
@@ -198,8 +197,14 @@ export async function POST(request: Request) {
       reason: "Direct classic-pool lookup was not completed.",
     };
     try {
-      const classicPool = await view(REF_EXCHANGE_CONTRACT, "get_pool", { pool_id: 34 });
-      const tokenIds = Array.isArray(classicPool?.token_account_ids) ? classicPool.token_account_ids : [];
+      const poolRows = await view(REF_EXCHANGE_CONTRACT, "get_pools", {
+        from_index: 34,
+        limit: 1,
+      });
+      const classicPool = Array.isArray(poolRows) ? poolRows[0] : null;
+      const tokenIds = Array.isArray(classicPool?.token_account_ids)
+        ? classicPool.token_account_ids
+        : [];
       const amounts = Array.isArray(classicPool?.amounts) ? classicPool.amounts : [];
       const inputIndex = tokenIds.indexOf(INPUT_TOKEN);
       const outputIndex = tokenIds.indexOf(OUTPUT_TOKEN);
@@ -223,13 +228,18 @@ export async function POST(request: Request) {
       };
 
       if (classicPoolCheck.usable) {
-        const amountWithFee = BigInt(amountIn) * BigInt(10000 - fee);
-        const denominator = inputReserve * 10000n + amountWithFee;
-        const amountOut = denominator > 0n
-          ? amountWithFee * outputReserve / denominator
-          : 0n;
-        if (amountOut > 0n && amountOut < outputReserve) {
-          const minimumOut = amountOut * BigInt(10000 - slippageBps) / 10000n;
+        // Use Ref's own get_return view for the quote rather than recreating
+        // the contract math locally. That keeps fee and pool semantics aligned.
+        const amountOutRaw = await view(REF_EXCHANGE_CONTRACT, "get_return", {
+          pool_id: 34,
+          token_in: INPUT_TOKEN,
+          amount_in: amountIn,
+          token_out: OUTPUT_TOKEN,
+        });
+        const amountOut = String(amountOutRaw);
+        if (/^\\d+$/.test(amountOut) && BigInt(amountOut) > 0n &&
+            BigInt(amountOut) < outputReserve) {
+          const minimumOut = (BigInt(amountOut) * BigInt(10000 - slippageBps) / 10000n).toString();
           return Response.json({
             available: true,
             network: "testnet",
@@ -249,9 +259,9 @@ export async function POST(request: Request) {
               poolId: "34",
               fee,
               state: "Live classic pool",
-              amountOut: amountOut.toString(),
-              minimumOut: minimumOut.toString(),
-              amountOutFormatted: formatBaseUnits(amountOut.toString(), outputMeta.decimals),
+              amountOut,
+              minimumOut,
+              amountOutFormatted: formatBaseUnits(amountOut, outputMeta.decimals),
               inputReserve: inputReserve.toString(),
               outputReserve: outputReserve.toString(),
             },
@@ -263,15 +273,14 @@ export async function POST(request: Request) {
         classicPoolCheck = {
           ...classicPoolCheck,
           usable: false,
-          reason: amountOut <= 0n
-            ? "The live classic pool returned no positive output for this amount."
-            : "The live classic pool quote exceeded its output reserve.",
+          reason: "Ref get_return returned no positive output or an output outside the current pool reserves.",
+          amountOut: amountOutRaw,
         };
       } else {
         classicPoolCheck = {
           ...classicPoolCheck,
           reason: !classicPool
-            ? "Classic pool 34 was not returned by the exchange contract."
+            ? "Classic pool 34 was not returned by get_pools(from_index:34, limit:1)."
             : !pairMatches
               ? "Classic pool 34 does not currently contain the expected wNEAR/USDT.e pair."
               : "Classic pool 34 has no positive reserves or an invalid fee.",
@@ -282,7 +291,7 @@ export async function POST(request: Request) {
         poolId: 34,
         found: false,
         usable: false,
-        reason: error instanceof Error ? error.message : "Classic pool view failed.",
+        reason: error instanceof Error ? error.message : "Classic get_pools/get_return view failed.",
       };
     }
 
