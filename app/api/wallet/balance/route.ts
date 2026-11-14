@@ -130,7 +130,7 @@ export async function GET(request: Request) {
         params: {
           request_type: "call_function",
           finality: "final",
-          account_id: "wbtc.ft.ref-labs.testnet",
+          account_id: "wbtc.fakes.testnet",
           method_name: "ft_balance_of",
           args_base64: Buffer.from(JSON.stringify({ account_id: accountId }), "utf8").toString("base64"),
         },
@@ -142,7 +142,7 @@ export async function GET(request: Request) {
         params: {
           request_type: "call_function",
           finality: "final",
-          account_id: "wbtc.ft.ref-labs.testnet",
+          account_id: "wbtc.fakes.testnet",
           method_name: "storage_balance_of",
           args_base64: Buffer.from(JSON.stringify({ account_id: accountId }), "utf8").toString("base64"),
         },
@@ -154,7 +154,7 @@ export async function GET(request: Request) {
         params: {
           request_type: "call_function",
           finality: "final",
-          account_id: "wbtc.ft.ref-labs.testnet",
+          account_id: "wbtc.fakes.testnet",
           method_name: "storage_balance_bounds",
           args_base64: Buffer.from("{}", "utf8").toString("base64"),
         },
@@ -189,7 +189,7 @@ export async function GET(request: Request) {
             bounds && typeof bounds === "object" && "min" in bounds &&
             typeof bounds.min === "string" && /^\d+$/.test(bounds.min)) {
           refWbtc = {
-            contractId: "wbtc.ft.ref-labs.testnet",
+            contractId: "wbtc.fakes.testnet",
             balance: formatUnits(raw, 8, 8),
             rawBalance: raw,
             decimals: 8,
