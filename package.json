@@ -10,7 +10,8 @@
   "dependencies": {
     "next": "^15.5.9",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "@fastnear/near-connect": "0.14.1"
   },
   "devDependencies": {
     "@types/node": "^22.15.30",

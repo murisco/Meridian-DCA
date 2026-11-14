@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import WalletConnect from "@/components/WalletConnect";
 
 type Asset = {
   assetId: string;
@@ -422,7 +423,10 @@ export default function Home() {
           <a href="#plans">My strategies</a>
           <a href="#how-it-works">How it works</a>
         </nav>
-        <div className="mode-pill"><span className="pulse-dot" /> DRY RUN · NO FUNDS MOVED</div>
+        <div className="topbar-actions">
+          <WalletConnect />
+          <div className="mode-pill"><span className="pulse-dot" /> DRY RUN · NO FUNDS MOVED</div>
+        </div>
       </header>
 
       <section className="hero">

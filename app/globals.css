@@ -508,3 +508,53 @@ h1 em,h2 em{color:#68e3f1}
 .plan-save-success strong{font:700 11px 'Manrope',sans-serif;color:#8de7cf}
 .plan-save-success span{font-size:10px;line-height:1.6;color:#a6c9c7}
 .plan-save-success a{font:600 10px 'DM Mono',monospace;color:#8debf2;text-decoration:underline;text-underline-offset:3px;align-self:flex-start;margin-top:2px}
+
+
+/* Testnet wallet connection */
+.topbar-actions{display:flex;align-items:center;gap:10px;flex:0 0 auto}
+.wallet-connect-area{position:relative;display:flex;align-items:center;gap:8px}
+.wallet-network-label{font:500 8px 'DM Mono',monospace;letter-spacing:.1em;color:#80dbe7;white-space:nowrap}
+.wallet-connect-button{
+  height:38px;display:inline-flex;align-items:center;justify-content:center;gap:9px;
+  padding:0 13px;border:1px solid rgba(90,224,242,.38);border-radius:7px;
+  background:rgba(90,224,242,.1);color:#a5f0f4;
+  font:600 10px 'DM Mono',monospace;white-space:nowrap;cursor:pointer;
+}
+.wallet-connect-button:hover:not(:disabled){background:rgba(90,224,242,.17);border-color:rgba(90,224,242,.65)}
+.wallet-connect-button:disabled{opacity:.55;cursor:wait}
+.wallet-connect-button.connected{background:rgba(107,232,197,.09);border-color:rgba(107,232,197,.3);color:#a4eadb}
+.wallet-connected-dot{width:7px;height:7px;border-radius:50%;background:#6be8c5;box-shadow:0 0 0 3px rgba(107,232,197,.12)}
+.wallet-chevron{font-size:13px;color:#85a2b3}
+.wallet-connect-menu{
+  position:absolute;z-index:20;right:0;top:calc(100% + 10px);width:min(290px,calc(100vw - 40px));
+  display:flex;flex-direction:column;gap:10px;padding:15px;
+  border:1px solid rgba(123,164,187,.3);border-radius:9px;
+  background:#111e2c;box-shadow:0 18px 45px rgba(0,0,0,.4);
+}
+.wallet-menu-label{font:500 8px 'DM Mono',monospace;letter-spacing:.12em;color:#77dce8}
+.wallet-connect-menu strong{font:600 11px 'DM Mono',monospace;line-height:1.6;color:#eaf4f8;overflow-wrap:anywhere}
+.wallet-connect-menu button{
+  border:1px solid rgba(255,133,133,.3);border-radius:6px;padding:9px 11px;
+  background:rgba(255,133,133,.07);color:#ffaaaa;text-align:left;
+  font:600 10px 'DM Mono',monospace;
+}
+.wallet-connect-menu button:disabled{opacity:.55;cursor:wait}
+.wallet-connect-error{
+  position:absolute;top:calc(100% + 8px);right:0;z-index:21;width:240px;
+  padding:9px 11px;border:1px solid rgba(255,133,133,.28);border-radius:7px;
+  background:#211923;color:#ffb0b0;font-size:9px;line-height:1.5;
+}
+@media(max-width:760px){
+  .topbar-actions{gap:7px}
+  .wallet-connect-area{gap:6px}
+  .wallet-network-label{font-size:7px;letter-spacing:.06em}
+  .wallet-connect-button{height:34px;padding:0 9px;gap:6px;font-size:8px}
+  .mode-pill{font-size:7px;padding:7px 8px;letter-spacing:.02em}
+}
+@media(max-width:480px){
+  .topbar-actions{gap:6px}
+  .wallet-network-label{display:none}
+  .wallet-connect-button{font-size:8px;padding:0 8px}
+  .topbar .mode-pill{font-size:0;padding:8px;width:12px;height:12px;gap:0;overflow:hidden}
+  .topbar .mode-pill .pulse-dot{flex:0 0 6px}
+}
