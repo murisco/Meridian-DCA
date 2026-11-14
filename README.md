@@ -2,7 +2,7 @@
 
 **Cross-chain dollar-cost averaging planner powered by NEAR Intents 1Click.**
 
-MERIDIAN helps a user define a recurring cross-chain buy, inspect a live 1Click quote, apply a user-selected slippage limit, and save a local DCA plan. This hackathon prototype is deliberately **dry-run only**.
+MERIDIAN helps a user define a recurring cross-chain buy, inspect a live quote, apply a user-selected slippage limit, save a local DCA plan, and execute a wallet-approved first swap on NEAR testnet. Mainnet execution remains disabled.
 
 ## What works in this prototype
 
@@ -42,15 +42,15 @@ The application uses the NEAR Intents 1Click API as its cross-chain quote and ro
 
 The user-selected slippage is sent as `slippageTolerance` in basis points (100 = 1%). The quote response's `amountOut` and `minAmountOut` are used for the saved-plan dry-run check. The quote request also includes a three-minute deadline.
 
-The implementation follows the [NEAR Intents agent skill](https://github.com/near/agent-skills/tree/main/skills/near-intents) for the token catalogue and quote API path, together with the official [1Click quickstart](https://docs.agentsonintents.com/integration/distribution-channels/1click-api/quickstart/making-a-request) and [NEAR Hackathon Unstoppable DeFi prompt](https://github.com/nearai/near-hackathon-prompt-examples/blob/main/tracks/01-defi.md). The skill's committed-quote, deposit, and status-tracking stages are intentionally not enabled in this dry-run prototype.
+The implementation follows the [NEAR Intents agent skill](https://github.com/near/agent-skills/tree/main/skills/near-intents) for the token catalogue and quote API path, together with the official [1Click quickstart](https://docs.agentsonintents.com/integration/distribution-channels/1click-api/quickstart/making-a-request) and [NEAR Hackathon Unstoppable DeFi prompt](https://github.com/nearai/near-hackathon-prompt-examples/blob/main/tracks/01-defi.md). The testnet swap flow implements committed quotes, deposits and status tracking through Tidepool. Mainnet committed quotes and deposits remain disabled.
 
 ## Safety boundary and limitations
 
-This release is **dry-run only**. The server forces `dry: true`; it never requests a committed quote or deposit address. The optional wallet connection is restricted to NEAR testnet and is used only to identify the connected account; this release does not request transaction signatures or send wallet transactions. MERIDIAN does not initiate token transfers, custody assets, or run unattended recurring swaps.
+Mainnet remains dry-run only. On testnet, a user can request a committed Tidepool quote and approve the token deposit in their connected wallet. MERIDIAN does not hold wallet private keys. Tidepool is a community-operated testnet service and manages the per-quote deposit addresses. Only valueless test assets may be sent there.
 
-Saved plans are browser-local planning records, not on-chain vaults and not server-side scheduled jobs. The **Check quote** action is manually triggered by the user and only obtains a fresh dry-run quote. It does not execute a buy.
+Saved plans are browser-local planning records, not on-chain vaults and not server-side scheduled jobs. The first-buy action is separate from saving a plan. It polls Tidepool and reports `SUCCESS` only when the provider confirms settlement.
 
-Because this demo does not create deposits, it does not currently have real swap history or live `SUCCESS`, `REFUNDED` or `FAILED` transaction states. Those require a separately approved execution flow, deposit tracking and explicit wallet authorization. Do not describe the current prototype as automated on-chain DCA.
+Future unattended DCA buys are not enabled. To execute future purchases without the user opening the app and approving each transaction, MERIDIAN needs a separate recurring authorization mechanism, such as a narrowly scoped smart-contract vault or delegated key with explicit spending limits. Do not store wallet private keys or describe local plans as automatic execution.
 
 ## Local development
 
@@ -98,12 +98,12 @@ The current prototype intentionally demonstrates quote generation and plan-level
 
 The dashboard now defaults to **Tidepool testnet sandbox** for testing with valueless test assets. The quote-environment selector can switch between:
 
-- **Testnet sandbox — Tidepool:** loads Tidepool's testnet token catalogue and requests a `dry: true` preview from `https://www.usetidepool.tech`. This is a community-operated sandbox and is not affiliated with NEAR or Defuse. Never send real assets to it.
+- **Testnet sandbox — Tidepool:** loads Tidepool's testnet token catalogue and supports dry-run previews plus wallet-approved test swaps through `https://www.usetidepool.tech`. This is a community-operated sandbox and is not affiliated with NEAR or Defuse. Its deposit addresses are managed by Tidepool. Never send real assets to it.
 - **Mainnet — NEAR Intents 1Click:** loads the official mainnet token catalogue and requests a `dry: true` quote from `https://1click.chaindefuser.com`.
 
 The connected NEAR wallet remains testnet-only. Its menu reads the native NEAR balance and the six Tidepool NEP-141 test-token balances using NEAR testnet RPC. The balance reader is read-only.
 
-**Important:** both quote modes remain preview-only in MERIDIAN. The app does not create a deposit address, request a transaction signature, transfer funds, or execute a swap. Tidepool supports end-to-end testnet swaps externally, but MERIDIAN's deposit and settlement flow is not enabled in this prototype.
+**Important:** mainnet remains preview-only. Testnet execution is available only for Tidepool NEAR tokens and requires explicit wallet approval.
 
 
 ## Native NEAR testnet wrapping
@@ -116,6 +116,6 @@ The connected wallet panel includes an opt-in **Wrap 0.02 NEAR → wNEAR** actio
 - Each function call uses 30 Tgas. The app keeps a 0.03 NEAR minimum liquid-balance reserve before allowing the action; actual gas is separate.
 - The user must review and approve the transaction in their connected wallet. MERIDIAN never has the user's private keys.
 - The app only reports wrapping success after the NEAR testnet RPC confirms that the `wrap.testnet` wNEAR balance increased by at least 0.02.
-- This creates `wrap.testnet` wNEAR. It is distinct from Tidepool's `wnear.tidepool-sandbox.testnet` token and cannot be assumed to be accepted by Tidepool's sandbox routes.
+- This creates `wrap.testnet` wNEAR. It is distinct from Tidepool's `wnear.tidepool-sandbox.testnet` token and cannot be used as the input asset for Tidepool's wNEAR/wBTC test routes. Claim the Tidepool wallet-mode faucet tokens for the sandbox swap.
 
 This transaction feature is testnet-only and is not a production financial flow.
