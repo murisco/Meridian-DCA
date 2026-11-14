@@ -68,7 +68,7 @@ export async function GET(request: Request) {
       return Response.json({ error: "The testnet account was not found or has no readable balance." }, { status: 404 });
     }
 
-    const [tokenBalances, wrappedNearResult, wrapStorageResult, refWbtcBalanceResult, refWbtcStorageResult, refWbtcBoundsResult] = await Promise.all([
+    const [tokenBalances, wrappedNearResult, wrapStorageResult, refWbtcBalanceResult, refWbtcStorageResult, refWbtcBoundsResult, refUsdtBalanceResult, refUsdtStorageResult, refUsdtBoundsResult] = await Promise.all([
       Promise.all(TEST_TOKENS.map(async (token) => {
       try {
         const argsBase64 = Buffer.from(JSON.stringify({ account_id: accountId }), "utf8").toString("base64");
@@ -159,6 +159,42 @@ export async function GET(request: Request) {
           args_base64: Buffer.from("{}", "utf8").toString("base64"),
         },
       }).catch(() => null),
+      rpcQuery({
+        jsonrpc: "2.0",
+        id: "meridian-ref-usdt-balance",
+        method: "query",
+        params: {
+          request_type: "call_function",
+          finality: "final",
+          account_id: "usdt.fakes.testnet",
+          method_name: "ft_balance_of",
+          args_base64: Buffer.from(JSON.stringify({ account_id: accountId }), "utf8").toString("base64"),
+        },
+      }).catch(() => null),
+      rpcQuery({
+        jsonrpc: "2.0",
+        id: "meridian-ref-usdt-storage",
+        method: "query",
+        params: {
+          request_type: "call_function",
+          finality: "final",
+          account_id: "usdt.fakes.testnet",
+          method_name: "storage_balance_of",
+          args_base64: Buffer.from(JSON.stringify({ account_id: accountId }), "utf8").toString("base64"),
+        },
+      }).catch(() => null),
+      rpcQuery({
+        jsonrpc: "2.0",
+        id: "meridian-ref-usdt-bounds",
+        method: "query",
+        params: {
+          request_type: "call_function",
+          finality: "final",
+          account_id: "usdt.fakes.testnet",
+          method_name: "storage_balance_bounds",
+          args_base64: Buffer.from("{}", "utf8").toString("base64"),
+        },
+      }).catch(() => null),
     ]);
 
     const wrapBalanceRaw = decodeJsonResult(wrappedNearResult.result?.result);
@@ -202,6 +238,37 @@ export async function GET(request: Request) {
       }
     }
 
+    let refUsdt: {
+      contractId: string;
+      balance: string;
+      rawBalance: string;
+      decimals: number;
+      registered: boolean;
+      storageMinimum: string;
+    } | null = null;
+    if (refUsdtBalanceResult && refUsdtStorageResult && refUsdtBoundsResult) {
+      try {
+        const raw = decodeJsonResult(refUsdtBalanceResult.result?.result);
+        const storage = decodeJsonResult(refUsdtStorageResult.result?.result);
+        const bounds = decodeJsonResult(refUsdtBoundsResult.result?.result);
+        if (typeof raw === "string" && /^\d+$/.test(raw) &&
+            (storage === null || (typeof storage === "object" && "total" in storage)) &&
+            bounds && typeof bounds === "object" && "min" in bounds &&
+            typeof bounds.min === "string" && /^\d+$/.test(bounds.min)) {
+          refUsdt = {
+            contractId: "usdt.fakes.testnet",
+            balance: formatUnits(raw, 6, 6),
+            rawBalance: raw,
+            decimals: 6,
+            registered: storage !== null,
+            storageMinimum: bounds.min,
+          };
+        }
+      } catch {
+        // Ref Finance USDT.e is optional; never break the core wallet panel.
+      }
+    }
+
     return Response.json({
       network: "testnet",
       accountId,
@@ -214,9 +281,10 @@ export async function GET(request: Request) {
       },
       wrapRegistered,
       refWbtc,
+      refUsdt,
       tokens: tokenBalances.filter((token): token is NonNullable<typeof token> => token !== null),
       updatedAt: new Date().toISOString(),
-      source: "NEAR testnet RPC, Tidepool test-token contracts and Ref Finance WBTC",
+      source: "NEAR testnet RPC, Tidepool test-token contracts and Ref Finance WBTC/USDT.e",
     }, {
       headers: { "Cache-Control": "no-store" },
     });
